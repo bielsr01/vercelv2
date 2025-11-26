@@ -8,7 +8,9 @@ import * as schema from "@shared/schema";
 neonConfig.webSocketConstructor = ws;
 
 const useSupabase = !!process.env.SUPABASE_DATABASE_URL;
-const connectionString = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
+// Trim whitespace from connection string to handle copy/paste issues
+const rawConnectionString = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
+const connectionString = rawConnectionString?.replace(/:\s+/g, ':').trim();
 
 if (!connectionString) {
   throw new Error(
