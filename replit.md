@@ -73,6 +73,29 @@ Preferred communication style: Simple, everyday language.
     - Handles Unicode dashes between team names
     - Automatically detects 2 vs 3 bet scenarios
   - **November 17, 2025**: Fixed atomic validation - system now validates ALL bets before submitting any, preventing partial submissions when some bets are incomplete
-- **Database Hosting**: Neon (serverless PostgreSQL).
+- **Database Hosting**: Supabase (serverless PostgreSQL).
 - **UI Components**: Shadcn/ui, Radix UI.
 - **Development Tools**: Replit integration (runtime error overlay, cartographer).
+
+## Vercel Deployment
+
+### Build Configuration
+- **Build Command**: `npm run build:vercel`
+- **Output Directory**: `dist/public`
+- **Serverless Function**: `api/index.mjs` (bundled with esbuild, ~2.1MB)
+
+### Environment Variables Required
+- `SUPABASE_DATABASE_URL`: PostgreSQL connection string from Supabase
+- `SESSION_SECRET`: Secure random string for session encryption
+- `NODE_ENV`: Set to `production`
+
+### Architecture
+- Frontend: Static files served from `dist/public`
+- Backend: Single serverless function handling all `/api/*` routes
+- Sessions: PostgreSQL-backed via connect-pg-simple (persists across serverless invocations)
+- Authentication: Express-session with Passport.js local strategy
+
+### Key Session Settings for Serverless
+- `proxy: true`: Required behind Vercel's proxy
+- `sameSite: 'lax'`: Same-origin cookies (frontend and API on same domain)
+- `secure: true`: HTTPS-only in production
