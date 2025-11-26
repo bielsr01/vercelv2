@@ -36,10 +36,11 @@ export function setupAuth(app: Express) {
     resave: false,
     saveUninitialized: false,
     store: storage.sessionStore,
+    proxy: true,
     cookie: {
       secure: isProduction,
       httpOnly: true,
-      sameSite: isProduction ? 'none' : 'lax',
+      sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
   };
