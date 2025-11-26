@@ -2,7 +2,7 @@ import serverlessExpress from "@vendia/serverless-express";
 import app, { initializeApp } from "../server/app";
 
 export const config = {
-  runtime: "nodejs20.x",
+  runtime: "nodejs",
 };
 
 let handler: any;
