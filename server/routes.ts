@@ -27,6 +27,31 @@ const upload = multer({
 const pdfPlumberService = new PdfPlumberService();
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Health check and diagnostics route (no auth required)
+  app.get("/api/health", async (req, res) => {
+    const diagnostics: any = {
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || "unknown",
+      hasSupabaseUrl: !!process.env.SUPABASE_DATABASE_URL,
+      hasDatabaseUrl: !!process.env.DATABASE_URL,
+      hasSessionSecret: !!process.env.SESSION_SECRET,
+      sessionId: req.sessionID || "none",
+      isAuthenticated: req.isAuthenticated ? req.isAuthenticated() : false,
+      cookies: Object.keys(req.cookies || {}),
+    };
+    
+    try {
+      const result = await db.execute("SELECT 1 as test");
+      diagnostics.database = "connected";
+    } catch (error: any) {
+      diagnostics.database = "error: " + error.message;
+    }
+    
+    console.log("[Health] Diagnostics:", JSON.stringify(diagnostics));
+    res.json(diagnostics);
+  });
+
   // Setup authentication
   setupAuth(app);
 

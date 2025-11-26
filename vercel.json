@@ -1,15 +1,21 @@
 {
+  "version": 2,
   "buildCommand": "npm run build:vercel",
   "outputDirectory": "dist/public",
-  "framework": null,
-  "rewrites": [
+  "functions": {
+    "api/index.mjs": {
+      "maxDuration": 30,
+      "memory": 1024
+    }
+  },
+  "routes": [
     {
-      "source": "/api/:path*",
-      "destination": "/api/index.mjs"
+      "src": "/api/(.*)",
+      "dest": "/api/index.mjs"
     },
     {
-      "source": "/((?!api/).*)",
-      "destination": "/index.html"
+      "src": "/(.*)",
+      "dest": "/index.html"
     }
   ]
 }
