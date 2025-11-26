@@ -16,7 +16,7 @@ import type {
 import { eq, desc, inArray, asc } from "drizzle-orm";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
-import { pool } from "./db";
+import { sessionPool } from "./db";
 
 const PostgresSessionStore = connectPg(session);
 
@@ -62,7 +62,11 @@ class DatabaseStorage implements IStorage {
   sessionStore: session.Store;
 
   constructor() {
-    this.sessionStore = new PostgresSessionStore({ pool, createTableIfMissing: true });
+    this.sessionStore = new PostgresSessionStore({ 
+      pool: sessionPool, 
+      createTableIfMissing: true,
+      errorLog: console.error 
+    });
   }
 
   // Users

@@ -24,6 +24,13 @@ export const pool = useSupabase
   ? new PgPool({ connectionString, ssl: { rejectUnauthorized: false } })
   : new NeonPool({ connectionString });
 
+// Dedicated session pool - ALWAYS uses pg driver for connect-pg-simple compatibility
+export const sessionPool = new PgPool({ 
+  connectionString, 
+  ssl: { rejectUnauthorized: false },
+  max: 5 // Limit connections for serverless
+});
+
 export const db = useSupabase
   ? drizzlePg({ client: pool as PgPool, schema })
   : drizzleNeon({ client: pool as NeonPool, schema });

@@ -1,0 +1,46 @@
+16:06:19.456 Running build in Washington, D.C., USA (East) – iad1
+16:06:19.457 Build machine configuration: 2 cores, 8 GB
+16:06:19.598 Cloning github.com/bielsr01/BetTrackerPro (Branch: main, Commit: 89d696f)
+16:06:20.259 Cloning completed: 660.000ms
+16:06:20.660 Restored build cache from previous deployment (EivksZdAccLmzhtCNjr1xG5bRw1q)
+16:06:21.243 Warning: Due to "engines": { "node": "20.x" } in your `package.json` file, the Node.js Version defined in your Project Settings ("24.x") will not apply, Node.js Version "20.x" will be used instead. Learn More: http://vercel.link/node-version
+16:06:21.243 Running "vercel build"
+16:06:21.672 Vercel CLI 48.11.0
+16:06:22.356 Warning: Due to "engines": { "node": "20.x" } in your `package.json` file, the Node.js Version defined in your Project Settings ("24.x") will not apply, Node.js Version "20.x" will be used instead. Learn More: http://vercel.link/node-version
+16:06:22.365 Installing dependencies...
+16:06:23.617 
+16:06:23.618 up to date in 1s
+16:06:23.618 
+16:06:23.618 66 packages are looking for funding
+16:06:23.619   run `npm fund` for details
+16:06:23.778 
+16:06:23.779 > rest-express@1.0.0 build:vercel
+16:06:23.779 > vite build && esbuild api/_index.ts --platform=node --bundle --format=esm --outfile=api/index.mjs --external:pg --external:pg-native --external:better-sqlite3 --external:mysql2 --external:tedious --external:oracledb --external:@aws-sdk/* --external:pdfplumber
+16:06:23.779 
+16:06:24.042 [36mvite v5.4.19 [32mbuilding for production...[36m[39m
+16:06:24.393 transforming...
+16:06:24.510 Browserslist: browsers data (caniuse-lite) is 13 months old. Please run:
+16:06:24.511   npx update-browserslist-db@latest
+16:06:24.511   Why you should do it regularly: https://github.com/browserslist/update-db#readme
+16:06:25.913 
+16:06:25.913 A PostCSS plugin did not pass the `from` option to `postcss.parse`. This may cause imported assets to be incorrectly transformed. If you've recently added a PostCSS plugin that raised this warning, please contact the package author to fix the issue.
+16:06:34.283 [32m✓[39m 3389 modules transformed.
+16:06:35.147 rendering chunks...
+16:06:35.163 computing gzip size...
+16:06:35.198 [2m../dist/public/[22m[32mindex.html                 [39m[1m[2m    2.61 kB[22m[1m[22m[2m │ gzip:   1.02 kB[22m
+16:06:35.198 [2m../dist/public/[22m[2massets/[22m[35mindex-D18UVMpN.css  [39m[1m[2m   81.18 kB[22m[1m[22m[2m │ gzip:  13.07 kB[22m
+16:06:35.198 [2m../dist/public/[22m[2massets/[22m[36mindex-GTWX8MYl.js   [39m[1m[33m1,263.97 kB[39m[22m[2m │ gzip: 366.25 kB[22m
+16:06:35.199 [33m
+16:06:35.199 (!) Some chunks are larger than 500 kB after minification. Consider:
+16:06:35.203 - Using dynamic import() to code-split the application
+16:06:35.203 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+16:06:35.203 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+16:06:35.203 [32m✓ built in 10.84s[39m
+16:06:35.451 
+16:06:35.452   api/index.mjs  2.1mb ⚠️
+16:06:35.452 
+16:06:35.452 ⚡ Done in 188ms
+16:06:35.529 Build Completed in /vercel/output [13s]
+16:06:35.625 Deploying outputs...
+16:06:38.236 Deployment completed
+16:06:38.849 Creating build cache...
