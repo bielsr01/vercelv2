@@ -4,6 +4,10 @@
   "outputDirectory": "dist/public",
   "rewrites": [
     {
+      "source": "/api/pdf-plumber-service",
+      "destination": "/api/pdf-plumber-service"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api"
     }
@@ -11,6 +15,10 @@
   "functions": {
     "api/index.ts": {
       "maxDuration": 10
+    },
+    "api/pdf-plumber-service.py": {
+      "maxDuration": 30,
+      "runtime": "python3.11"
     }
   }
 }

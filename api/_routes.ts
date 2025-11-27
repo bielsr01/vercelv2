@@ -438,17 +438,118 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   app.post("/api/ocr/process", requireAuth, upload.single('file'), async (req, res) => {
-    res.status(501).json({ 
-      error: "OCR processing not available in serverless environment",
-      message: "PDF processing requires Python which is not available on Vercel. Please use manual data entry or the BetBurger import feature."
-    });
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const pdfBase64 = req.file.buffer.toString('base64');
+      
+      const host = req.get('host') || 'localhost:5000';
+      const protocol = req.protocol || 'http';
+      const pythonServiceUrl = `${protocol}://${host}/api/pdf-plumber-service`;
+      
+      console.log(`[OCR] Calling Python service at: ${pythonServiceUrl}`);
+      
+      const pythonResponse = await fetch(pythonServiceUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ pdf: pdfBase64 })
+      });
+
+      if (!pythonResponse.ok) {
+        const errorText = await pythonResponse.text();
+        console.error('[OCR] Python service error:', errorText);
+        return res.status(pythonResponse.status).json({ 
+          error: "OCR processing failed",
+          details: errorText
+        });
+      }
+
+      const result = await pythonResponse.json();
+      
+      if (!result.success) {
+        return res.status(500).json({ error: result.error || "OCR processing failed" });
+      }
+
+      res.json(result.data);
+    } catch (error) {
+      console.error('[OCR] Error processing PDF:', error);
+      res.status(500).json({ 
+        error: "OCR processing failed",
+        message: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
   });
 
   app.post("/api/ocr/process-batch", requireAuth, upload.array('files', 50), async (req, res) => {
-    res.status(501).json({ 
-      error: "OCR batch processing not available in serverless environment",
-      message: "PDF processing requires Python which is not available on Vercel. Please use manual data entry or the BetBurger import feature."
-    });
+    try {
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        return res.status(400).json({ error: "No files uploaded" });
+      }
+
+      const host = req.get('host') || 'localhost:5000';
+      const protocol = req.protocol || 'http';
+      const pythonServiceUrl = `${protocol}://${host}/api/pdf-plumber-service`;
+      
+      console.log(`[OCR Batch] Processing ${files.length} files via: ${pythonServiceUrl}`);
+      
+      const results = [];
+      const errors = [];
+
+      for (const file of files) {
+        try {
+          const pdfBase64 = file.buffer.toString('base64');
+          
+          const pythonResponse = await fetch(pythonServiceUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ pdf: pdfBase64 })
+          });
+
+          if (!pythonResponse.ok) {
+            const errorText = await pythonResponse.text();
+            errors.push({ filename: file.originalname, error: errorText });
+            continue;
+          }
+
+          const result = await pythonResponse.json();
+          
+          if (result.success) {
+            results.push({
+              filename: file.originalname,
+              data: result.data
+            });
+          } else {
+            errors.push({ filename: file.originalname, error: result.error || "Processing failed" });
+          }
+        } catch (fileError) {
+          errors.push({ 
+            filename: file.originalname, 
+            error: fileError instanceof Error ? fileError.message : "Unknown error" 
+          });
+        }
+      }
+
+      res.json({
+        success: true,
+        processed: results.length,
+        failed: errors.length,
+        results,
+        errors
+      });
+    } catch (error) {
+      console.error('[OCR Batch] Error processing PDFs:', error);
+      res.status(500).json({ 
+        error: "Batch OCR processing failed",
+        message: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
   });
 
   app.get("/api/admin/migration/export-sql", requireAdmin, async (req, res) => {
