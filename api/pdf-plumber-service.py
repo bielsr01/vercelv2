@@ -1,11 +1,15 @@
 from http.server import BaseHTTPRequestHandler
 import json
-import pdfplumber
 import base64
 from io import BytesIO
 import traceback
 import re
 from datetime import datetime
+
+try:
+    import pdfplumber
+except ImportError:
+    pdfplumber = None
 
 def preprocessar_linhas_quebradas(texto):
     lines = texto.split('\n')
@@ -399,6 +403,9 @@ def extrair_dados_pdf_bytes(pdf_bytes):
         'profitPercentage': None
     }
     
+    if not pdfplumber:
+        return dados
+    
     try:
         with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
             for pagina in pdf.pages[:2]:
@@ -623,16 +630,21 @@ def extrair_dados_pdf_bytes(pdf_bytes):
     
     return dados
 
+
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
+            if not pdfplumber:
+                self.send_error_response(500, 'pdfplumber not installed')
+                return
+                
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length)
             
             data = json.loads(post_data.decode('utf-8'))
             
             if 'pdf' not in data:
-                self.send_error_response(400, 'PDF não fornecido')
+                self.send_error_response(400, 'PDF not provided')
                 return
             
             pdf_base64 = data['pdf']
@@ -650,7 +662,7 @@ class handler(BaseHTTPRequestHandler):
             stack_trace = traceback.format_exc()
             print(f"Error processing PDF: {error_msg}")
             print(f"Stack trace: {stack_trace}")
-            self.send_error_response(500, f'Erro ao processar PDF: {error_msg}')
+            self.send_error_response(500, f'Error processing PDF: {error_msg}')
     
     def send_json_response(self, status_code, data):
         self.send_response(status_code)
