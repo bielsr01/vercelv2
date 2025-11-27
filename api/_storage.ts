@@ -1,5 +1,5 @@
-import { db } from "./_db";
-import { accountHolders, bettingHouses, surebetSets, bets, users } from "../shared/schema";
+import { db } from "./_db.js";
+import { accountHolders, bettingHouses, surebetSets, bets, users } from "../shared/schema.js";
 import type {
   AccountHolder,
   InsertAccountHolder,
@@ -12,7 +12,7 @@ import type {
   SurebetSetWithBets,
   User,
   InsertUser
-} from "../shared/schema";
+} from "../shared/schema.js";
 import { eq, desc, inArray, asc } from "drizzle-orm";
 
 export interface IStorage {
