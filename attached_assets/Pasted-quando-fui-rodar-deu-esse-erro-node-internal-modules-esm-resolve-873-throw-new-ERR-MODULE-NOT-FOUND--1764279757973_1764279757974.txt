@@ -1,0 +1,68 @@
+quando fui rodar deu esse erro node:internal/modules/esm/resolve:873 throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null); ^ Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'vite' imported from /app/dist/index.js at packageResolve (node:internal/modules/esm/resolve:873:9) at moduleResolve (node:internal/modules/esm/resolve:946:18) at defaultResolve (node:internal/modules/esm/resolve:1188:11) at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:708:12) at #cachedDefaultResolve (node:internal/modules/esm/loader:657:25) at ModuleLoader.resolve (node:internal/modules/esm/loader:640:38) at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:264:38) at ModuleJob._link (node:internal/modules/esm/module_job:168:49) { code: 'ERR_MODULE_NOT_FOUND' } Node.js v20.19.6 node:internal/modules/esm/resolve:873 throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null); ^ Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'vite' imported from /app/dist/index.js at packageResolve (node:internal/modules/esm/resolve:873:9) at moduleResolve (node:internal/modules/esm/resolve:946:18) at defaultResolve (node:internal/modules/esm/resolve:1188:11) at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:708:12) at #cachedDefaultResolve (node:internal/modules/esm/loader:657:25) at ModuleLoader.resolve (node:internal/modules/esm/loader:640:38) at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:264:38) at ModuleJob._link (node:internal/modules/esm/module_job:168:49) { code: 'ERR_MODULE_NOT_FOUND' }Show less
+
+O erro indica que o pacote vite está sendo importado no arquivo /app/dist/index.js, mas ele não está disponível no ambiente de produção. Isso ocorre porque o vite é uma dependência de desenvolvimento e não deveria ser necessário no ambiente de produção.
+
+O problema pode estar relacionado a como o código foi construído ou como o vite está sendo usado no projeto. Vamos corrigir isso:
+
+Passos para corrigir:
+1. Verifique o uso do vite no código
+O vite é uma ferramenta de build e não deveria ser importado ou usado diretamente no código de produção. Verifique se há alguma importação de vite no seu código, especialmente no arquivo index.js ou em outros arquivos no diretório dist.
+
+Se encontrar algo como:
+
+import vite from 'vite';
+Remova essa importação, pois ela não é necessária no ambiente de produção.
+
+2. Garanta que o build está correto
+Certifique-se de que o comando npm run build está gerando os arquivos corretamente no diretório dist. O vite deve ser usado apenas para construir os arquivos, e o resultado final não deve depender dele.
+
+No seu package.json, o script de build deve ser algo como:
+
+"scripts": {
+  "build": "vite build"
+}
+Se o vite está sendo usado de forma incorreta no código de produção, ajuste o código para que ele não dependa do vite em runtime.
+
+3. Atualize o Dockerfile
+Certifique-se de que o Dockerfile está configurado corretamente para separar o ambiente de build e produção. Aqui está um exemplo atualizado:
+
+# Etapa 1: Build
+FROM node:20-slim AS builder
+
+# Instale dependências necessárias para o build
+WORKDIR /app
+COPY package*.json ./
+RUN npm install  # Instala todas as dependências, incluindo devDependencies
+
+# Copie o código e construa o projeto
+COPY . .
+RUN npm run build
+
+# Etapa 2: Produção
+FROM node:20-slim
+
+# Instale apenas as dependências de produção
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+
+# Copie os arquivos construídos da etapa de build
+COPY --from=builder /app/dist ./dist
+
+# Exponha a porta e defina o comando de inicialização
+EXPOSE 5000
+CMD ["node", "dist/index.js"]
+4. Reconstrua a imagem
+Após ajustar o código e o Dockerfile, reconstrua a imagem:
+
+docker build -t betv4 .
+5. Teste novamente
+Rode o container:
+
+docker run -d -p 5000:5000 --name betv4-container betv4
+Acesse http://localhost:5000⁠ para verificar se está funcionando.
+
+Se o problema persistir:
+Verifique novamente o código no diretório dist para garantir que não há dependências de desenvolvimento como vite.
+Me envie o conteúdo do arquivo index.js ou qualquer outro arquivo relevante no diretório dist para que eu possa ajudar a identificar o problema.
+Estou aqui para ajudar! 😊
