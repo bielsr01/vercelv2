@@ -29,7 +29,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/server/pdf ./server/pdf
+COPY --from=builder /app/server/pdf ./dist/pdf
 
 EXPOSE 5000
 

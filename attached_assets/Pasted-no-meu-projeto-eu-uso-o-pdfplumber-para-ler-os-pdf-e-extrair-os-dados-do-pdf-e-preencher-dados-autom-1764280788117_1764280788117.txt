@@ -1,0 +1,47 @@
+no meu projeto eu uso o pdfplumber para ler os pdf e extrair os dados do pdf e preencher dados automaticaente no sistema mas ao tentar usar a aba nova aposta do meu projeto deu erro veja [Database] Using Supabase database 9:56:38 PM [express] serving on port 5000 9:56:54 PM [express] GET /api/user 401 in 2ms 9:57:02 PM [express] POST /api/login 200 in 588ms :: {"id":"6fe49cd8-1711-47a3-9510-b9aeb61ca532","e… 9:57:02 PM [express] GET /api/user 200 in 98ms :: {"id":"6fe49cd8-1711-47a3-9510-b9aeb61ca532","emai… 9:57:03 PM [express] GET /api/betting-houses 200 in 395ms :: [{"id":"f59a5753-d7fd-4c0c-b8d2-422c3e9… 9:57:03 PM [express] GET /api/surebet-sets 200 in 398ms :: [{"id":"aefd39ff-1bee-4826-8930-fae7aa7cf… AI OCR disabled; using pdfplumber for PDF processing Processing PDF with pdfplumber: ssure01.pdf, size: 245162 bytes Custom prompt provided: No Processing application/pdf with pdfplumber Temporary PDF file created: /tmp/pdf_1764280634134_7bkjosu0i.pdf Temporary file cleaned: /tmp/pdf_1764280634134_7bkjosu0i.pdf Python script stderr: python3: can't open file '/app/dist/pdf/parse_pdf.py': [Errno 2] No such file or directory pdfplumber processing error: Error: Python script exited with code 2: python3: can't open file '/app/dist/pdf/parse_pdf.py': [Errno 2] No such file or directory at ChildProcess.<anonymous> (file:///app/dist/index.js:551:18) at ChildProcess.emit (node:events:524:28) at maybeClose (node:internal/child_process:1104:16) at ChildProcess._handle.onexit (node:internal/child_process:304:5) 9:57:14 PM [express] POST /api/ocr/process 400 in 130ms :: {"error":"Failed to process OCR","message… 9:57:28 PM [express] GET /api/account-holders 200 in 411ms :: [{"id":"2cf2d191-4ead-4d05-9b59-6db17f… Batch processing 1 PDF(s)... Processing PDF with pdfplumber: sure03.pdf, size: 237431 bytes Custom prompt provided: No Processing application/pdf with pdfplumber Temporary PDF file created: /tmp/pdf_1764280654003_npbdxvauq.pdf Temporary file cleaned: /tmp/pdf_1764280654003_npbdxvauq.pdf Batch processing complete: 0/1 successful Python script stderr: python3: can't open file '/app/dist/pdf/parse_pdf.py': [Errno 2] No such file or directory como posso resolverShow less
+
+O erro indica que o script Python parse_pdf.py, necessário para processar os PDFs com o pdfplumber, não está sendo encontrado no caminho especificado (/app/dist/pdf/parse_pdf.py) dentro do container. Isso pode ocorrer por alguns motivos, como:
+
+Possíveis causas:
+O arquivo parse_pdf.py não foi incluído na imagem Docker:
+
+O arquivo pode não estar no diretório correto ou não foi copiado para o container durante o build da imagem.
+O caminho no container está incorreto:
+
+O caminho /app/dist/pdf/parse_pdf.py pode não corresponder ao local onde o arquivo realmente está no container.
+Dependências do Python não estão instaladas:
+
+O ambiente Python no container pode não ter o pdfplumber ou outras dependências instaladas.
+Como resolver:
+1. Verifique o Dockerfile
+Certifique-se de que o arquivo parse_pdf.py está sendo copiado para o local correto no container durante o build da imagem. No seu Dockerfile, deve haver algo como:
+
+# Copiar o script Python para o container
+COPY path/to/parse_pdf.py /app/dist/pdf/
+Se o arquivo não estiver sendo copiado, adicione a linha acima ao seu Dockerfile e reconstrua a imagem:
+
+docker build -t betv4:latest .
+2. Confirme o caminho do arquivo
+Certifique-se de que o caminho /app/dist/pdf/parse_pdf.py está correto. Você pode inspecionar o container para verificar se o arquivo está no local esperado:
+
+docker exec -it dreamy_wozniak ls /app/dist/pdf/
+Se o arquivo não estiver lá, verifique o caminho no seu projeto local e ajuste o Dockerfile para copiá-lo corretamente.
+
+3. Instale as dependências do Python
+Certifique-se de que o pdfplumber e outras dependências do Python estão instaladas no container. No Dockerfile, adicione algo como:
+
+RUN pip install pdfplumber
+Depois, reconstrua a imagem e reinicie o container.
+
+4. Teste o script manualmente
+Você pode testar o script manualmente dentro do container para verificar se ele funciona corretamente:
+
+docker exec -it dreamy_wozniak python3 /app/dist/pdf/parse_pdf.py
+Se isso der erro, pode ser que o script tenha problemas ou que as dependências não estejam instaladas.
+
+Resumo:
+Verifique se o arquivo parse_pdf.py está sendo copiado para o container no Dockerfile.
+Confirme o caminho correto do arquivo no container.
+Certifique-se de que as dependências do Python estão instaladas.
+Teste o script manualmente no container.
+Se precisar de mais ajuda, compartilhe o conteúdo do seu Dockerfile e o erro atualizado!
