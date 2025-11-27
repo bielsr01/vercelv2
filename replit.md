@@ -27,7 +27,7 @@ Preferred communication style: Simple, everyday language.
 - **Runtime**: Node.js with Express.js
 - **Language**: TypeScript (ES modules)
 - **API**: RESTful
-- **File Handling**: Multer (for image uploads, 10MB limit)
+- **File Handling**: Multer (for image uploads, 4MB limit - Vercel compatible)
 - **Error Handling**: Centralized middleware
 - **Development**: Vite for HMR
 
@@ -37,9 +37,9 @@ Preferred communication style: Simple, everyday language.
 - **Schema**: Normalized structure for account holders, betting houses, surebet sets, and individual bets. Uses Decimal for financial calculations and UUID for primary keys.
 
 ### Authentication and Authorization
-- **Session Management**: Express sessions with PostgreSQL store (connect-pg-simple)
-- **Security**: CORS, secure session cookies
-- **Access Control**: Route-level protection (planned)
+- **Authentication**: JWT tokens stored in httpOnly cookies (stateless, Vercel serverless compatible)
+- **Security**: CORS, secure cookies (sameSite=lax, secure in production)
+- **Access Control**: Route-level protection with requireAuth/requireAdmin middleware
 
 ### Key Architectural Decisions
 - **OCR-First Data Entry**: Prioritizes automated data extraction from PDFs using `pdfplumber` to reduce manual entry and errors.
@@ -80,22 +80,21 @@ Preferred communication style: Simple, everyday language.
 ## Vercel Deployment
 
 ### Build Configuration
-- **Build Command**: `npm run build:vercel`
+- **Build Command**: `npm run vercel-build`
 - **Output Directory**: `dist/public`
-- **Serverless Function**: `api/index.mjs` (bundled with esbuild, ~2.1MB)
+- **Serverless Function**: `api/index.mjs` (bundled with esbuild, ~2.0MB)
 
 ### Environment Variables Required
 - `SUPABASE_DATABASE_URL`: PostgreSQL connection string from Supabase
-- `SESSION_SECRET`: Secure random string for session encryption
+- `SESSION_SECRET`: Secure random string for JWT signing
 - `NODE_ENV`: Set to `production`
 
 ### Architecture
 - Frontend: Static files served from `dist/public`
 - Backend: Single serverless function handling all `/api/*` routes
-- Sessions: PostgreSQL-backed via connect-pg-simple (persists across serverless invocations)
-- Authentication: Express-session with Passport.js local strategy
+- Authentication: Stateless JWT tokens in httpOnly cookies (no session store required)
 
-### Key Session Settings for Serverless
-- `proxy: true`: Required behind Vercel's proxy
+### Key Settings for Serverless
 - `sameSite: 'lax'`: Same-origin cookies (frontend and API on same domain)
 - `secure: true`: HTTPS-only in production
+- File uploads limited to 4MB (Vercel's 4.5MB payload limit)
