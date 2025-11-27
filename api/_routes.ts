@@ -1,12 +1,12 @@
 import type { Express } from "express";
-import { storage } from "./_storage";
-import { db } from "./_db";
-import { bets } from "../shared/schema";
+import { storage } from "./_storage.js";
+import { db } from "./_db.js";
+import { bets } from "../shared/schema.js";
 import { eq } from "drizzle-orm";
-import { insertAccountHolderSchema, insertBettingHouseSchema, insertSurebetSetSchema, insertBetSchema, insertUserSchema } from "../shared/schema";
+import { insertAccountHolderSchema, insertBettingHouseSchema, insertSurebetSetSchema, insertBetSchema, insertUserSchema } from "../shared/schema.js";
 import { z } from "zod";
 import multer from "multer";
-import { setupAuth, requireAuth, requireAdmin, hashPassword } from "./_jwt-auth";
+import { setupAuth, requireAuth, requireAdmin, hashPassword } from "./_jwt-auth.js";
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -453,7 +453,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.get("/api/admin/migration/export-sql", requireAdmin, async (req, res) => {
     try {
-      const { MigrationService } = await import("./_migration-service");
+      const { MigrationService } = await import("./_migration-service.js");
       const migrationService = new MigrationService();
       const sqlContent = await migrationService.exportToSQL();
       
@@ -470,7 +470,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.get("/api/admin/migration/stats", requireAdmin, async (req, res) => {
     try {
-      const { MigrationService } = await import("./_migration-service");
+      const { MigrationService } = await import("./_migration-service.js");
       const migrationService = new MigrationService();
       const stats = await migrationService.getStats();
       
