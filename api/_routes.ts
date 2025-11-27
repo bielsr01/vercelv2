@@ -7,6 +7,7 @@ import { insertAccountHolderSchema, insertBettingHouseSchema, insertSurebetSetSc
 import { z } from "zod";
 import multer from "multer";
 import { setupAuth, requireAuth, requireAdmin, hashPassword } from "./_jwt-auth.js";
+import { extractDataFromPdf } from "./_pdf-parser.js";
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -443,38 +444,13 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ error: "No file uploaded" });
       }
 
-      const pdfBase64 = req.file.buffer.toString('base64');
+      console.log(`[OCR] Processing PDF: ${req.file.originalname}, size: ${req.file.buffer.length} bytes`);
       
-      const host = req.get('host') || 'localhost:5000';
-      const protocol = req.protocol || 'http';
-      const pythonServiceUrl = `${protocol}://${host}/api/pdf-plumber-service`;
+      const result = await extractDataFromPdf(req.file.buffer);
       
-      console.log(`[OCR] Calling Python service at: ${pythonServiceUrl}`);
+      console.log(`[OCR] Extraction complete for: ${req.file.originalname}`);
       
-      const pythonResponse = await fetch(pythonServiceUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ pdf: pdfBase64 })
-      });
-
-      if (!pythonResponse.ok) {
-        const errorText = await pythonResponse.text();
-        console.error('[OCR] Python service error:', errorText);
-        return res.status(pythonResponse.status).json({ 
-          error: "OCR processing failed",
-          details: errorText
-        });
-      }
-
-      const result = await pythonResponse.json();
-      
-      if (!result.success) {
-        return res.status(500).json({ error: result.error || "OCR processing failed" });
-      }
-
-      res.json(result.data);
+      res.json(result);
     } catch (error) {
       console.error('[OCR] Error processing PDF:', error);
       res.status(500).json({ 
@@ -491,44 +467,25 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ error: "No files uploaded" });
       }
 
-      const host = req.get('host') || 'localhost:5000';
-      const protocol = req.protocol || 'http';
-      const pythonServiceUrl = `${protocol}://${host}/api/pdf-plumber-service`;
-      
-      console.log(`[OCR Batch] Processing ${files.length} files via: ${pythonServiceUrl}`);
+      console.log(`[OCR Batch] Processing ${files.length} PDF files`);
       
       const results = [];
       const errors = [];
 
       for (const file of files) {
         try {
-          const pdfBase64 = file.buffer.toString('base64');
+          console.log(`[OCR Batch] Processing: ${file.originalname}`);
           
-          const pythonResponse = await fetch(pythonServiceUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ pdf: pdfBase64 })
+          const data = await extractDataFromPdf(file.buffer);
+          
+          results.push({
+            filename: file.originalname,
+            data: data
           });
-
-          if (!pythonResponse.ok) {
-            const errorText = await pythonResponse.text();
-            errors.push({ filename: file.originalname, error: errorText });
-            continue;
-          }
-
-          const result = await pythonResponse.json();
           
-          if (result.success) {
-            results.push({
-              filename: file.originalname,
-              data: result.data
-            });
-          } else {
-            errors.push({ filename: file.originalname, error: result.error || "Processing failed" });
-          }
+          console.log(`[OCR Batch] Completed: ${file.originalname}`);
         } catch (fileError) {
+          console.error(`[OCR Batch] Error processing ${file.originalname}:`, fileError);
           errors.push({ 
             filename: file.originalname, 
             error: fileError instanceof Error ? fileError.message : "Unknown error" 
