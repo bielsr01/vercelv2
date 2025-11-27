@@ -3,7 +3,7 @@ import { storage } from "./storage";
 import { db } from "./db";
 import { bets } from "@shared/schema";
 import { eq } from "drizzle-orm";
-import { PdfPlumberService } from "./pdf-plumber-service";
+import { OCRService } from "./ocr-service";
 import { insertAccountHolderSchema, insertBettingHouseSchema, insertSurebetSetSchema, insertBetSchema, insertUserSchema } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
@@ -23,7 +23,13 @@ const upload = multer({
   }
 });
 
-const pdfPlumberService = new PdfPlumberService();
+function getOCRService(): OCRService {
+  const apiKey = process.env.MISTRAL_API_KEY;
+  if (!apiKey) {
+    throw new Error("MISTRAL_API_KEY environment variable is required for OCR processing");
+  }
+  return new OCRService(apiKey);
+}
 
 export async function registerRoutes(app: Express): Promise<void> {
   setupAuth(app);
@@ -448,21 +454,23 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
 
       const customPrompt = req.body.prompt || null;
-      console.log(`AI OCR disabled; using pdfplumber for PDF processing`);
+      console.log(`Processing PDF with Mistral AI Pixtral: ${req.file.originalname}`);
       
-      const ocrResult = await pdfPlumberService.processDocument(
+      const ocrService = getOCRService();
+      const ocrResult = await ocrService.processDocument(
         req.file.buffer,
-        req.file.originalname,
         req.file.mimetype,
         customPrompt
       );
+      
+      console.log("Mistral AI extraction result:", JSON.stringify(ocrResult, null, 2));
       
       res.json({
         success: true,
         data: ocrResult
       });
     } catch (error) {
-      console.error("pdfplumber processing error:", error);
+      console.error("Mistral AI OCR processing error:", error);
       res.status(400).json({ 
         error: "Failed to process OCR",
         message: error instanceof Error ? error.message : "Unknown error"
@@ -479,14 +487,15 @@ export async function registerRoutes(app: Express): Promise<void> {
         return;
       }
 
-      console.log(`Batch processing ${files.length} PDF(s)...`);
+      console.log(`Batch processing ${files.length} PDF(s) with Mistral AI...`);
+      
+      const ocrService = getOCRService();
 
       const results = await Promise.all(
         files.map(async (file) => {
           try {
-            const ocrResult = await pdfPlumberService.processDocument(
+            const ocrResult = await ocrService.processDocument(
               file.buffer,
-              file.originalname,
               file.mimetype,
               undefined
             );
