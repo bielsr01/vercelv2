@@ -27,19 +27,19 @@ Preferred communication style: Simple, everyday language.
 - **Runtime**: Node.js with Express.js
 - **Language**: TypeScript (ES modules)
 - **API**: RESTful
-- **File Handling**: Multer (for image uploads, 4MB limit - Vercel compatible)
+- **File Handling**: Multer (for image uploads, 10MB limit)
 - **Error Handling**: Centralized middleware
 - **Development**: Vite for HMR
 
 ### Data Storage
-- **Database**: PostgreSQL (Supabase)
+- **Database**: PostgreSQL (Neon serverless)
 - **ORM**: Drizzle ORM (type-safe queries, migrations)
 - **Schema**: Normalized structure for account holders, betting houses, surebet sets, and individual bets. Uses Decimal for financial calculations and UUID for primary keys.
 
 ### Authentication and Authorization
-- **Authentication**: JWT tokens stored in httpOnly cookies (stateless, Vercel serverless compatible)
-- **Security**: CORS, secure cookies (sameSite=lax, secure in production)
-- **Access Control**: Route-level protection with requireAuth/requireAdmin middleware
+- **Session Management**: Express sessions with PostgreSQL store (connect-pg-simple)
+- **Security**: CORS, secure session cookies
+- **Access Control**: Route-level protection (planned)
 
 ### Key Architectural Decisions
 - **OCR-First Data Entry**: Prioritizes automated data extraction from PDFs using `pdfplumber` to reduce manual entry and errors.
@@ -73,28 +73,6 @@ Preferred communication style: Simple, everyday language.
     - Handles Unicode dashes between team names
     - Automatically detects 2 vs 3 bet scenarios
   - **November 17, 2025**: Fixed atomic validation - system now validates ALL bets before submitting any, preventing partial submissions when some bets are incomplete
-- **Database Hosting**: Supabase (serverless PostgreSQL).
+- **Database Hosting**: Neon (serverless PostgreSQL).
 - **UI Components**: Shadcn/ui, Radix UI.
 - **Development Tools**: Replit integration (runtime error overlay, cartographer).
-
-## Vercel Deployment
-
-### Build Configuration
-- **Build Command**: `npm run vercel-build`
-- **Output Directory**: `dist/public`
-- **Serverless Function**: `api/index.mjs` (bundled with esbuild, ~2.0MB)
-
-### Environment Variables Required
-- `SUPABASE_DATABASE_URL`: PostgreSQL connection string from Supabase
-- `SESSION_SECRET`: Secure random string for JWT signing
-- `NODE_ENV`: Set to `production`
-
-### Architecture
-- Frontend: Static files served from `dist/public`
-- Backend: Single serverless function handling all `/api/*` routes
-- Authentication: Stateless JWT tokens in httpOnly cookies (no session store required)
-
-### Key Settings for Serverless
-- `sameSite: 'lax'`: Same-origin cookies (frontend and API on same domain)
-- `secure: true`: HTTPS-only in production
-- File uploads limited to 4MB (Vercel's 4.5MB payload limit)
