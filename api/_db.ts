@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import * as schema from "../shared/schema.js";
+import * as schema from "../shared/schema";
 
 const rawConnectionString = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
 const connectionString = rawConnectionString?.replace(/:\s+/g, ':').trim();

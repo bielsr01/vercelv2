@@ -3,10 +3,10 @@ import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
-import { db } from "./_db.js";
-import { users } from "../shared/schema.js";
+import { db } from "./_db";
+import { users } from "../shared/schema";
 import { eq } from "drizzle-orm";
-import type { User as SelectUser } from "../shared/schema.js";
+import type { User as SelectUser } from "../shared/schema";
 
 declare global {
   namespace Express {

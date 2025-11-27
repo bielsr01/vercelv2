@@ -15,13 +15,13 @@ export class MigrationService {
 
   constructor() {
     this.sourcePool = new Pool({ 
-      connectionString: process.env.DATABASE_URL,
+      connectionString: process.env.DATABASE_URL || process.env.SUPABASE_DATABASE_URL,
       ssl: { rejectUnauthorized: false }
     });
   }
 
   async getStats(): Promise<MigrationStats> {
-    const tables = ['users', 'account_holders', 'betting_houses', 'surebet_sets', 'bets', 'session'];
+    const tables = ['users', 'account_holders', 'betting_houses', 'surebet_sets', 'bets'];
     const stats: TableStats[] = [];
     let totalRecords = 0;
 
@@ -48,7 +48,6 @@ export class MigrationService {
     lines.push('');
     
     lines.push('-- Drop existing tables (in reverse order of dependencies)');
-    lines.push('DROP TABLE IF EXISTS session CASCADE;');
     lines.push('DROP TABLE IF EXISTS bets CASCADE;');
     lines.push('DROP TABLE IF EXISTS surebet_sets CASCADE;');
     lines.push('DROP TABLE IF EXISTS betting_houses CASCADE;');
@@ -112,13 +111,6 @@ CREATE TABLE bets (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE session (
-  sid VARCHAR NOT NULL PRIMARY KEY,
-  sess JSON NOT NULL,
-  expire TIMESTAMP(6) NOT NULL
-);
-
-CREATE INDEX idx_session_expire ON session(expire);
 CREATE INDEX idx_bets_surebet_set ON bets(surebet_set_id);
 CREATE INDEX idx_surebet_sets_user ON surebet_sets(user_id);
 CREATE INDEX idx_betting_houses_user ON betting_houses(user_id);
@@ -131,8 +123,7 @@ CREATE INDEX idx_account_holders_user ON account_holders(user_id);
       { name: 'account_holders', order: 2 },
       { name: 'betting_houses', order: 3 },
       { name: 'surebet_sets', order: 4 },
-      { name: 'bets', order: 5 },
-      { name: 'session', order: 6 }
+      { name: 'bets', order: 5 }
     ];
 
     for (const table of tables) {
