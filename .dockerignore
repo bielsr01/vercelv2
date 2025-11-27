@@ -1,0 +1,13 @@
+node_modules
+.git
+.gitignore
+*.md
+.env
+.env.*
+dist
+.cache
+.pythonlibs
+attached_assets
+*.log
+.replit
+replit.nix

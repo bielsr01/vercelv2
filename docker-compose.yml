@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  bettracker:
+    build: .
+    container_name: bettracker-pro
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - SUPABASE_DATABASE_URL=${SUPABASE_DATABASE_URL}
+      - SESSION_SECRET=${SESSION_SECRET}
+    networks:
+      - bettracker-network
+
+networks:
+  bettracker-network:
+    driver: bridge
