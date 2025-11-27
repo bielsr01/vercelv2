@@ -8,59 +8,92 @@ from datetime import datetime
 def preprocessar_linhas_quebradas(texto):
     """
     Junta linhas que foram quebradas, incluindo casas e tipos divididos
+    Trata especialmente casas como "Super...Bet (BR)" que ficam fragmentadas
     """
     lines = texto.split('\n')
-    lines_processadas = []
     
-    i = 0
-    while i < len(lines):
-        linha_atual = lines[i].strip()
-        
-        if not linha_atual:
-            i += 1
-            continue
-            
-        # === CASO 1: Linha seguinte é apenas sufixo (BR), (CO), etc ===
-        if (i + 1 < len(lines) and 
-            lines[i + 1].strip() in ['(BR)', '(CO)', '(PT)', '(RO)', '(BE)', '(MX)', '(UK)', '(ZA)', '(SE)']):
-            linha_juntada = linha_atual + ' ' + lines[i + 1].strip()
-            lines_processadas.append(linha_juntada)
-            i += 2
-            continue
-        
-        # === CASO 2: Casa de apostas fragmentada ===
-        # Detecta linhas com dados de aposta que podem ter continuação
-        tem_odds_usd = 'USD' in linha_atual and any(char.isdigit() for char in linha_atual)
-        
-        if tem_odds_usd and i + 1 < len(lines):
-            proxima_linha = lines[i + 1].strip()
-            
-            # Próxima linha é continuação se:
-            # - Não tem números (não é nova aposta)
-            # - Não é separador/seção
-            # - Tem palavras que podem ser casa/tipo
-            # Verifica se próxima linha tem números significativos (odds/stakes)
-            # Ignora números em texto como "1º", "2º", etc.
-            tem_odds_significativos = bool(re.search(r'\d+\.\d+|\d+\s+USD', proxima_linha))
-            
-            eh_continuacao = (proxima_linha and 
-                            not tem_odds_significativos and  # Não é nova aposta
-                            proxima_linha not in ['〉', '○', '●'] and
-                            not any(keyword in proxima_linha.lower() for keyword in 
-                                   ['aposta total', 'mostrar', 'use sua', 'arredondar', 'evento', 'chance']) and
-                            len(proxima_linha) > 2)  # Não é linha muito curta
-            
-            if eh_continuacao:
-                linha_juntada = linha_atual + ' ' + proxima_linha
-                lines_processadas.append(linha_juntada)
-                i += 2
-                continue
-        
-        # === CASO 3: Linha normal ===
-        lines_processadas.append(linha_atual)
-        i += 1
+    # PASSO 1: Remove símbolos isolados e linhas vazias
+    # Lista de símbolos para ignorar (caracteres Unicode especiais)
+    simbolos_ignorar = ['〉', '○', '●', '\uf35d', '\uf059', '\uf0c5', '\u3009', '\u232a']
+    lines_limpas = []
+    for line in lines:
+        linha_stripped = line.strip()
+        # Remove símbolos do início e fim da linha
+        for simbolo in simbolos_ignorar:
+            linha_stripped = linha_stripped.replace(simbolo, ' ').strip()
+        # Verifica se linha é apenas um símbolo isolado
+        eh_apenas_simbolo = linha_stripped in simbolos_ignorar or len(linha_stripped) <= 1
+        if linha_stripped and not eh_apenas_simbolo:
+            lines_limpas.append(linha_stripped)
     
-    return '\n'.join(lines_processadas)
+    # PASSO 2: Junta "(BR) texto" com a linha anterior que começa com casa fragmentada
+    # Exemplo: linha anterior "Marjo ...", linha atual "(BR) 1º o período" -> junta como "Marjo ... (BR)"
+    lines_step2 = []
+    for linha in lines_limpas:
+        if re.match(r'^\([A-Z]{2}\)', linha):  # Começa com (BR) ou (CO) etc
+            if lines_step2:
+                ultima = lines_step2[-1]
+                # Se linha anterior tem USD/BRL ou começa com Sports/Bet (fragmento de casa)
+                if 'USD' in ultima or 'BRL' in ultima or re.match(r'^(Sports|Bet)\b', ultima):
+                    # Extrai só o código do país
+                    match = re.match(r'^(\([A-Z]{2}\))', linha)
+                    if match:
+                        codigo_pais = match.group(1)
+                        lines_step2[-1] = ultima + ' ' + codigo_pais
+                        # Se sobrou texto após o código, adiciona como nova linha
+                        resto = linha[len(codigo_pais):].strip()
+                        if resto:
+                            lines_step2.append(resto)
+                        continue
+            lines_step2.append(linha)
+        else:
+            lines_step2.append(linha)
+    
+    # PASSO 3: Junta linhas que começam com "Sports" ou "Bet" com a linha anterior que começa com Super/Marjo/Estrela
+    lines_step3 = []
+    for linha in lines_step2:
+        if re.match(r'^(Bet|Sports)\b', linha):
+            # Linha começa com "Bet" ou "Sports" - pode ser fragmento de casa
+            if lines_step3:
+                ultima = lines_step3[-1]
+                # Verifica se a última linha começa com casa fragmentada e tem USD/BRL
+                primeira_palavra = ultima.split()[0] if ultima.split() else ""
+                if primeira_palavra.lower() in ['super', 'marjo', 'estrela', 'bravo', 'max'] and ('USD' in ultima or 'BRL' in ultima):
+                    # Extrai o fragmento do nome da casa
+                    # Pode ser: "Sports", "Bet", "Sports escanteios (BR)", "Bet (BR)"
+                    # Queremos extrair: "Sports", "Bet", "Sports (BR)", "Bet (BR)"
+                    prefixo = re.match(r'^(Bet|Sports)', linha).group(1)
+                    # Verifica se tem código de país na linha
+                    match_pais = re.search(r'\(([A-Z]{2})\)', linha)
+                    if match_pais:
+                        fragmento_casa = f"{prefixo} ({match_pais.group(1)})"
+                    else:
+                        fragmento_casa = prefixo
+                    
+                    # Extrai texto restante que pode ser parte do tipo de aposta (ex: "escanteios")
+                    # Remove o prefixo (Sports/Bet), o código de país, e pega o resto
+                    resto_linha = linha
+                    resto_linha = re.sub(r'^(Bet|Sports)\s*', '', resto_linha)  # Remove Sports/Bet
+                    resto_linha = re.sub(r'\([A-Z]{2}\)', '', resto_linha)  # Remove (BR)/(CO)
+                    resto_linha = resto_linha.strip()
+                    
+                    # Reconstrói a linha: casa original + fragmento da casa + resto do texto (se houver)
+                    nova_linha = ultima + ' ' + fragmento_casa
+                    if resto_linha:
+                        # Adiciona o resto (ex: "escanteios") ao tipo de aposta
+                        # Insere antes de USD/BRL para que seja capturado como parte do tipo
+                        match_moeda = re.search(r'([\d.]+\s*(?:USD|BRL))', nova_linha)
+                        if match_moeda:
+                            pos = match_moeda.start()
+                            nova_linha = nova_linha[:pos] + resto_linha + ' ' + nova_linha[pos:]
+                    
+                    lines_step3[-1] = nova_linha
+                    continue
+            lines_step3.append(linha)
+        else:
+            lines_step3.append(linha)
+    
+    return '\n'.join(lines_step3)
 
 def extrair_dados_pdf(caminho_pdf):
     """
@@ -211,157 +244,37 @@ def extrair_dados_pdf(caminho_pdf):
                 # === EXTRAÇÃO DE APOSTAS ===
                 apostas_encontradas = []
                 
+                # Após preprocessing, cada aposta deve estar em uma linha completa
                 # Processa linha por linha procurando apostas
-                i = 0
-                while i < len(linhas):
-                    linha = linhas[i]
+                for linha in linhas:
+                    # Pula linhas de cabeçalho ou seções
+                    if any(keyword in linha for keyword in ['Aposta total', 'Mostrar', 'Use sua', 'Arredondar', 'Chance', 'Com comissão', 'Lucro', 'Levar em consideração']):
+                        continue
                     
-                    # Detecta casa de apostas dinamicamente
+                    # Detecta casa de apostas
                     casa_encontrada = detectar_casa_apostas(linha)
                     
-                    if casa_encontrada:
-                        # Coleta linhas da aposta (pode estar dividida em múltiplas linhas)
-                        texto_aposta = linha
-                        j = i + 1
+                    if casa_encontrada and ('USD' in linha or 'BRL' in linha):
+                        # A linha contém uma aposta completa (casa + dados financeiros)
                         
-                        # PRIMEIRO: Coleta fragmentos do nome da casa (linhas curtas sem números/símbolos)
-                        # Exemplo: "Marjo" -> "Sports" -> "(BR)"
-                        fragmentos_casa = []
-                        linhas_usadas_fragmentos = set()  # Rastreia linhas totalmente usadas
-                        linhas_parcialmente_usadas = {}  # {index_linha: resto_da_linha}
-                        while j < len(linhas) and j < i + 4:  # Máximo 3 linhas para completar casa
-                            proxima_linha = linhas[j].strip()
-                            
-                            # Para se for linha vazia, de separação ou símbolos
-                            if not proxima_linha or proxima_linha in ['〉', '○', '●', '\uf35d', 'new']:
-                                j += 1
-                                continue
-                            
-                            # Se tem dados financeiros/símbolos, não é fragmento da casa
-                            if any(s in proxima_linha for s in ['USD', 'BRL', '●', '○', '\uf35d']) or re.search(r'\d+\.\d+', proxima_linha):
-                                break
-                            
-                            # Se é linha muito curta (< 30 chars), pode ser fragmento da casa
-                            # Exemplos: "Sports", "(BR)", "Sports escanteios"
-                            if len(proxima_linha) < 30:
-                                nova_casa = detectar_casa_apostas(proxima_linha)
-                                
-                                # Fragmento válido se: não é casa nova
-                                if not nova_casa:
-                                    # Aceita (BR), (CO), etc
-                                    if re.match(r'^\([A-Z]{2}\)$', proxima_linha):
-                                        fragmentos_casa.append(proxima_linha)
-                                        linhas_usadas_fragmentos.add(j)
-                                        j += 1
-                                    # Aceita palavras simples como "Sports", "Bet", etc (parte do nome da casa)
-                                    elif len(proxima_linha.split()) == 1 and proxima_linha[0].isupper():
-                                        fragmentos_casa.append(proxima_linha)
-                                        linhas_usadas_fragmentos.add(j)
-                                        j += 1
-                                    # Se tem múltiplas palavras, pega só a PRIMEIRA se for capitalizada
-                                    # Ex: "Sports escanteios" -> pega "Sports", resto vai para tipo
-                                    elif proxima_linha[0].isupper():
-                                        palavras = proxima_linha.split()
-                                        if palavras[0][0].isupper() and not re.search(r'\b(gol|time|cantos?|escanteios?|acima|abaixo)\b', palavras[0].lower()):
-                                            fragmentos_casa.append(palavras[0])
-                                            # Salva o resto da linha para adicionar ao tipo depois
-                                            resto = ' '.join(palavras[1:])
-                                            if resto:
-                                                linhas_parcialmente_usadas[j] = resto
-                                            linhas_usadas_fragmentos.add(j)
-                                            j += 1
-                                        else:
-                                            break
-                                    else:
-                                        break
-                                else:
-                                    break
-                            else:
-                                break
+                        # Verifica se a linha tem "Bet (BR)" ou "Sports (BR)" ao final (casas fragmentadas)
+                        # Nesse caso, a casa real é "Super Bet (BR)" ou "Marjo Sports (BR)"
+                        match_bet_suffix = re.search(r'\s+(Bet|Sports)\s*\([A-Z]{2}\)\s*$', linha)
+                        if match_bet_suffix:
+                            primeira_palavra = linha.split()[0]
+                            sufixo = match_bet_suffix.group(0).strip()
+                            # Reconstrói o nome da casa
+                            if primeira_palavra.lower() in ['super', 'marjo', 'estrela', 'bravo', 'max']:
+                                casa_encontrada = primeira_palavra + ' ' + sufixo
                         
-                        # Atualiza nome da casa com fragmentos coletados
-                        if fragmentos_casa:
-                            casa_encontrada = casa_encontrada + ' ' + ' '.join(fragmentos_casa)
+                        # Correção especial: se linha termina com "(BR)" isolado
+                        if linha.strip().endswith('(BR)') and not casa_encontrada.endswith('(BR)'):
+                            casa_encontrada = casa_encontrada + ' (BR)'
                         
-                        # Correção especial para casas conhecidas fragmentadas
-                        # Se detectou "Marjo" mas não tem "Sports" no nome, verifica se está no texto
-                        if casa_encontrada.startswith('Marjo') and 'Sports' not in casa_encontrada:
-                            # Procura "Sports" nas linhas já coletadas (i até j)
-                            for k in range(i, min(j, len(linhas))):
-                                if 'Sports' in linhas[k]:
-                                    casa_encontrada = 'Marjo Sports (BR)'
-                                    break
-                        
-                        # DEPOIS: Coleta linhas com dados financeiros e continuação do tipo
-                        while j < len(linhas) and j < i + 8:  # Máximo total 8 linhas
-                            proxima_linha = linhas[j]
-                            
-                            # Trata linhas usadas como fragmentos da casa
-                            if j in linhas_usadas_fragmentos:
-                                # Se foi parcialmente usada, adiciona o resto ao texto
-                                if j in linhas_parcialmente_usadas:
-                                    texto_aposta += ' ' + linhas_parcialmente_usadas[j]
-                                j += 1
-                                continue
-                            
-                            # Para se encontrar outra casa de apostas diferente
-                            # PRIMEIRO: Detecta se a linha é uma palavra capitalizada curta (potencial início de casa)
-                            # Usa detectar_casa_apostas para validar se é prefixo de casa conhecida
-                            palavras_linha = proxima_linha.strip().split()
-                            if palavras_linha:
-                                primeira_palavra = palavras_linha[0]
-                                
-                                # Se é palavra capitalizada curta (3-15 chars) SEM números/odds
-                                if (len(primeira_palavra) >= 3 and 
-                                    len(primeira_palavra) <= 15 and 
-                                    primeira_palavra[0].isupper() and
-                                    not re.search(r'\d+\.\d+', proxima_linha)):  # Não tem odds
-                                    
-                                    # Tenta detectar a palavra como possível casa
-                                    possivel_casa = detectar_casa_apostas(primeira_palavra)
-                                    if possivel_casa:
-                                        # É uma palavra que inicia uma casa conhecida
-                                        # Compara com casa atual para ver se é diferente
-                                        casa_atual_base = casa_encontrada.split()[0] if casa_encontrada else ""
-                                        if casa_atual_base.lower() != primeira_palavra.lower():
-                                            # É uma casa NOVA diferente - para imediatamente!
-                                            print(f"DEBUG: Detectada NOVA CASA! casaAtual={casa_atual_base} novaDetectada={primeira_palavra} linha={proxima_linha[:50]}", file=sys.stderr)
-                                            break
-                            
-                            # SEGUNDO: Tenta detecção normal de casa
-                            casa_na_proxima = detectar_casa_apostas(proxima_linha)
-                            if casa_na_proxima:
-                                # Para se for uma casa DIFERENTE da atual
-                                casa_atual_base = casa_encontrada.split()[0] if casa_encontrada else ""
-                                casa_proxima_base = casa_na_proxima.split()[0] if casa_na_proxima else ""
-                                
-                                # Se são casas diferentes, para imediatamente
-                                if casa_atual_base.lower() != casa_proxima_base.lower():
-                                    break
-                                
-                            # Para se encontrar "Aposta total" ou outras seções
-                            if any(keyword in proxima_linha for keyword in ['Aposta total', 'Mostrar', 'Use sua', 'Arredondar']):
-                                break
-                            
-                            # Adiciona linha se contém dados relevantes OU se é continuação de tipo de aposta
-                            tem_dados_financeiros = any(keyword in proxima_linha for keyword in ['USD', 'BRL', '●', '○']) or re.search(r'\d+\.\d+', proxima_linha)
-                            eh_continuacao_tipo = bool(re.search(r'\b(gol|time|cantos?|escanteios?|resultado|final|tempo|minuto|chute|corner|primeiro|segundo|1º|2º|over|under|acima|abaixo|casa|fora|empate|handicap)\b', proxima_linha.lower()))
-                            eh_linha_curta = len(proxima_linha.split()) <= 6
-                            
-                            if tem_dados_financeiros or (eh_continuacao_tipo and eh_linha_curta):
-                                texto_aposta += ' ' + proxima_linha
-                                j += 1
-                            else:
-                                break
-                        
-                        # Processa o texto coletado da aposta
-                        aposta = processar_aposta_completa(texto_aposta, casa_encontrada)
+                        # Processa a aposta
+                        aposta = processar_aposta_completa(linha, casa_encontrada)
                         if aposta and aposta['house'] and aposta['odd']:
                             apostas_encontradas.append(aposta)
-                        
-                        i = j  # Pula para depois desta aposta
-                    else:
-                        i += 1
                 
                 # Mapeia apostas para bet1, bet2 e bet3 (se houver)
                 if len(apostas_encontradas) >= 1:
@@ -638,33 +551,43 @@ def processar_aposta_completa(texto_aposta, casa_aposta):
             parte_antes_simbolo = texto_aposta
             parte_depois_simbolo = ""
     
+    # === EXTRAÇÃO DE STAKE PRIMEIRO ===
+    # Stake é o número imediatamente antes de USD/BRL
+    stake = None
+    stake_matches = re.findall(r'(\d+\.?\d*)\s+(USD|BRL)', texto_aposta)
+    if stake_matches:
+        stake = float(stake_matches[0][0])
+    
     # === EXTRAÇÃO DE ODD ===
-    # A odd geralmente é o último número decimal antes do símbolo/stake
-    # e está no range típico de 1.0 a 50.0
+    # A odd é um número decimal no range 1.0-50.0 que NÃO é stake
+    # Geralmente vem ANTES do stake no texto
     numeros_antes = re.findall(r'\d+\.\d+', parte_antes_simbolo)
     odd = None
     
     if numeros_antes:
-        # Busca do FIM para o início (último número válido antes do símbolo é a odd)
-        # Isso evita pegar números que fazem parte do tipo (ex: "Acima 1.5")
+        # Busca número válido que não seja stake
         for num_str in reversed(numeros_antes):
             num = float(num_str)
+            # Pula se for stake
+            if stake and abs(num - stake) < 0.01:
+                continue
+            # Aceita se estiver no range de odds válido
             if 1.0 <= num <= 50.0:
                 odd = num
                 break
         
-        if not odd:  # Fallback
-            odd = float(numeros_antes[-1])
+        # Fallback: se não encontrou, tenta o primeiro número válido
+        if not odd:
+            for num_str in numeros_antes:
+                num = float(num_str)
+                if stake and abs(num - stake) < 0.01:
+                    continue
+                if 1.0 <= num <= 50.0:
+                    odd = num
+                    break
     
-    # === EXTRAÇÃO DE STAKE E PROFIT ===
-    stake = None
+    # === EXTRAÇÃO DE PROFIT ===
     profit = None
-    
-    # Busca padrões baseados em moeda para garantir precisão
-    # Padrão: NUMBER USD/BRL -> stake
-    stake_matches = re.findall(r'(\d+\.?\d*)\s+(USD|BRL)', texto_aposta)
-    if stake_matches:
-        stake = float(stake_matches[0][0])
     
     # Profit é o último número após stake (geralmente < 1000 para lucros individuais)
     # Extração mais robusta: procura o último número DEPOIS do stake
@@ -744,11 +667,18 @@ def processar_aposta_completa(texto_aposta, casa_aposta):
     tipo_aposta = re.sub(r'[●○]', '', tipo_aposta)  # Remove símbolos circulares
     tipo_aposta = re.sub(r'\uf35d', '', tipo_aposta)  # Remove unicode F35D
     tipo_aposta = tipo_aposta.replace('\u232A', '')  # Remove U+232A (〉)
+    
+    # Remove porcentagem de comissão (ex: "0.0%", "5.5%")
+    tipo_aposta = re.sub(r'\s*\d+\.?\d*\s*%', '', tipo_aposta)
+    
     tipo_aposta = re.sub(r'\s+', ' ', tipo_aposta).strip()  # Limpa espaços
     tipo_aposta = re.sub(r'[-–]\s*$', '', tipo_aposta).strip()  # Remove traços finais
     
     # Remove o nome da casa de apostas do tipo de aposta
     casa_sem_parenteses = re.sub(r'\s*\([A-Z]{2}\)\s*', '', casa_aposta).strip()
+    
+    # Remove palavras de interface que não deveriam estar no tipo
+    tipo_aposta = re.sub(r'\b(Mostrar|comissões|Use sua|própria|taxa|câmbio|Arredondar|até|Levar|consideração|taxas)\b', '', tipo_aposta, flags=re.IGNORECASE)
     
     # PRIMEIRO: Tenta remover o nome completo da casa como frase única
     tipo_aposta = re.sub(r'\b' + re.escape(casa_sem_parenteses) + r'\b', '', tipo_aposta, flags=re.IGNORECASE)
@@ -759,7 +689,7 @@ def processar_aposta_completa(texto_aposta, casa_aposta):
         'estrela': ['EstrelaBet', 'Estrela'],
         'pinnacle': ['Pinnacle'],
         'marjo': ['MarjoSports', 'Marjo', 'Sports'],  # Sports só se for MarjoSports
-        'super': ['SuperBet', 'Super'],
+        'super': ['SuperBet', 'Super', 'Bet'],  # Remove "Bet" quando é Super Bet
         'stake': ['Stake'],
         'kto': ['KTO'],
         'blaze': ['Blaze'],
@@ -781,8 +711,14 @@ def processar_aposta_completa(texto_aposta, casa_aposta):
     # Limpa espaços extras resultantes da remoção
     tipo_aposta = re.sub(r'\s+', ' ', tipo_aposta).strip()
     
+    # Limpa o nome da casa de apostas
+    casa_limpa = casa_aposta
+    # Remove palavras de interface que podem ter sido capturadas
+    casa_limpa = re.sub(r'\s*(Mostrar|comissões|Use sua|própria|taxa|câmbio|Arredondar|até|Levar|consideração|taxas)\b.*', '', casa_limpa, flags=re.IGNORECASE)
+    casa_limpa = casa_limpa.strip()
+    
     return {
-        'house': casa_aposta,
+        'house': casa_limpa,
         'odd': odd,
         'type': tipo_aposta if tipo_aposta else None,
         'stake': stake,
