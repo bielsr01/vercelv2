@@ -1,0 +1,338 @@
+fiz as configuracoes e continua da mesma forma 
+apis sem funcionar
+
+nos logs aparece
+Error find module '/var/task/server/app' imported from /var/task/api/index.js
+    at finalizeResolution (node:internal/modules/esm/resolve:287:11)
+    at moduleResolve (node:internal/modules/esm/resolve:956:10)
+    at moduleResolveWithNodePath (node:internal/modules/esm/resolve:1192:14)
+    at defaultResolve (node:internal/modules/esm/resolve:1235:79)
+    at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:708:12)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:657:25)
+    at ModuleLoader.resolve (node:internal/modules/esm/loader:640:38)
+    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:264:38)
+    at ModuleJob._link (node:internal/modules/esm/module_job:168:49) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///var/task/server/app'
+}
+Node.js process exited with exit status: 1. The logs above can help with debugging the issue.
+
+Error find module '/var/task/server/app' imported from /var/task/api/index.js
+    at finalizeResolution (node:internal/modules/esm/resolve:287:11)
+    at moduleResolve (node:internal/modules/esm/resolve:956:10)
+    at moduleResolveWithNodePath (node:internal/modules/esm/resolve:1192:14)
+    at defaultResolve (node:internal/modules/esm/resolve:1235:79)
+    at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:708:12)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:657:25)
+    at ModuleLoader.resolve (node:internal/modules/esm/loader:640:38)
+    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:264:38)
+    at ModuleJob._link (node:internal/modules/esm/module_job:168:49) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///var/task/server/app'
+}
+Node.js process exited with exit status: 1. The logs above can help with debugging the issue.
+
+2025-11-27 02:18:34.400 [error] Error find module '/var/task/server/app' imported from /var/task/api/index.js
+    at finalizeResolution (node:internal/modules/esm/resolve:287:11)
+    at moduleResolve (node:internal/modules/esm/resolve:956:10)
+    at moduleResolveWithNodePath (node:internal/modules/esm/resolve:1192:14)
+    at defaultResolve (node:internal/modules/esm/resolve:1235:79)
+    at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:708:12)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:657:25)
+    at ModuleLoader.resolve (node:internal/modules/esm/loader:640:38)
+    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:264:38)
+    at ModuleJob._link (node:internal/modules/esm/module_job:168:49) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///var/task/server/app'
+}
+Node.js process exited with exit status: 1. The logs above can help with debugging the issue.
+Error find module '/var/task/server/app' imported from /var/task/api/index.js
+    at finalizeResolution (node:internal/modules/esm/resolve:287:11)
+    at moduleResolve (node:internal/modules/esm/resolve:956:10)
+    at moduleResolveWithNodePath (node:internal/modules/esm/resolve:1192:14)
+    at defaultResolve (node:internal/modules/esm/resolve:1235:79)
+    at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:708:12)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:657:25)
+    at ModuleLoader.resolve (node:internal/modules/esm/loader:640:38)
+    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:264:38)
+    at ModuleJob._link (node:internal/modules/esm/module_job:168:49) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///var/task/server/app'
+}
+Node.js process exited with exit status: 1. The logs above can help with debugging the issue.
+
+Obrigado por compartilhar os logs! Vejo que o erro continua após as configurações. O problema está claro: o arquivo /var/task/api/index.js está tentando importar /var/task/server/app, mas esse módulo não está sendo encontrado no ambiente de deployment.
+
+Vou te ajudar a investigar e resolver isso. Deixe-me verificar informações específicas sobre como configurar APIs Node.js/TypeScript na Vercel: Com base no erro que você está enfrentando, o problema está relacionado à estrutura de imports dentro das suas Vercel Functions. O arquivo /api/index.js está tentando importar /var/task/server/app, mas esse caminho não existe no ambiente serverless da Vercel.
+
+Aqui está o que você precisa fazer para resolver:
+
+O problema
+Suas funções na Vercel são executadas como serverless functions isoladas. Cada arquivo dentro da pasta /api se torna uma função independente. Quando você tenta importar ../server/app de dentro de /api/index.js, esse arquivo não está incluído no bundle da função serverless.
+
+Solução
+Você tem duas opções principais:
+
+Opção 1: Mova a lógica para dentro da pasta /api
+
+Se o código em server/app é necessário para suas APIs, você precisa movê-lo para dentro da pasta /api ou torná-lo acessível às funções:
+
+Coloque os arquivos utilitários diretamente dentro de /api
+Para arquivos auxiliares que não devem virar funções, nomeie-os com underscore no início (exemplo: _utils.js ou _app.js)
+Exemplo de estrutura:
+/api
+  ├── index.js          (sua function)
+  ├── _app.js           (código compartilhado - começa com _)
+  └── _utils.js         (utilitários - começa com _)
+
+Opção 2: Use um framework como Express com rewrites
+
+Se você está tentando rodar um servidor Express completo, precisa configurar o vercel.json para redirecionar todas as rotas para uma única função:
+
+Crie um arquivo vercel.json na raiz do projeto:
+json
+{
+  "version": 2,
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api" }
+  ]
+}
+
+E dentro de /api/index.js, exporte seu app Express:
+```javascript
+import app from './_app.js'
+
+export default app
+```
+
+Qual dessas abordagens se encaixa melhor no seu projeto? Você está tentando rodar um servidor Express completo ou são apenas algumas rotas de API individuais?
+
+Avatar for bielsr01-4654
+nao sei dizer poderia fazer os dois tutoriais
+Claro! Vou te mostrar as duas abordagens completas. Escolha a que fizer mais sentido para o seu projeto:
+
+Opção 1: API Routes Individuais (Recomendado para projetos simples)
+Esta é a abordagem mais simples e funciona bem se você tem algumas rotas de API separadas.
+
+Estrutura de arquivos:
+seu-projeto/
+├── api/
+│   ├── index.js           # Rota principal /api
+│   ├── users.js           # Rota /api/users
+│   ├── _utils.js          # Funções compartilhadas (não vira rota)
+│   └── _database.js       # Conexão com DB (não vira rota)
+├── package.json
+└── vercel.json (opcional)
+Exemplo de código:
+api/_utils.js (arquivo auxiliar):
+```javascript
+export function formatResponse(data) {
+  return {
+    success: true,
+    data: data,
+    timestamp: new Date().toISOString()
+  };
+}
+
+export function handleError(error) {
+  return {
+    success: false,
+    error: error.message
+  };
+}
+```
+
+api/index.js:
+```javascript
+import { formatResponse, handleError } from './_utils.js';
+
+export default async function handler(req, res) {
+  try {
+    const data = { message: 'Hello from API!' };
+    return res.status(200).json(formatResponse(data));
+  } catch (error) {
+    return res.status(500).json(handleError(error));
+  }
+}
+```
+
+api/users.js:
+```javascript
+import { formatResponse, handleError } from './_utils.js';
+
+export default async function handler(req, res) {
+  try {
+    if (req.method === 'GET') {
+      const users = [
+        { id: 1, name: 'João' },
+        { id: 2, name: 'Maria' }
+      ];
+      return res.status(200).json(formatResponse(users));
+    }
+
+if (req.method === 'POST') {
+  const newUser = req.body;
+  return res.status(201).json(formatResponse(newUser));
+}
+return res.status(405).json({ error: 'Method not allowed' });
+  } catch (error) {
+    return res.status(500).json(handleError(error));
+  }
+}
+```
+
+package.json (importante!):
+json
+{
+  "type": "module",
+  "dependencies": {
+    // suas dependências aqui
+  }
+}
+
+Como testar:
+/api → chama index.js
+/api/users → chama users.js
+Opção 2: Express.js Completo (Para aplicações maiores)
+Use esta abordagem se você já tem um app Express existente ou precisa de mais controle sobre roteamento.
+
+Estrutura de arquivos:
+seu-projeto/
+├── api/
+│   └── index.js           # Entry point do Express
+├── src/
+│   ├── app.js             # Configuração do Express
+│   ├── routes/
+│   │   ├── users.js
+│   │   └── products.js
+│   └── utils/
+│       └── helpers.js
+├── package.json
+└── vercel.json            # NECESSÁRIO para esta opção
+Exemplo de código:
+vercel.json (na raiz do projeto):
+json
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api"
+    }
+  ]
+}
+
+package.json:
+json
+{
+  "type": "module",
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
+
+src/app.js (seu app Express):
+```javascript
+import express from 'express';
+
+const app = express();
+
+// Middlewares
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Rotas
+app.get('/', (req, res) => {
+  res.json({ message: 'API está funcionando!' });
+});
+
+app.get('/users', (req, res) => {
+  const users = [
+    { id: 1, name: 'João' },
+    { id: 2, name: 'Maria' }
+  ];
+  res.json(users);
+});
+
+app.post('/users', (req, res) => {
+  const newUser = req.body;
+  res.status(201).json({
+    message: 'Usuário criado',
+    user: newUser
+  });
+});
+
+app.get('/products', (req, res) => {
+  const products = [
+    { id: 1, name: 'Produto A' },
+    { id: 2, name: 'Produto B' }
+  ];
+  res.json(products);
+});
+
+// Rota 404
+app.use((req, res) => {
+  res.status(404).json({ error: 'Rota não encontrada' });
+});
+
+export default app;
+```
+
+api/index.js (entry point para Vercel):
+```javascript
+import app from '../src/app.js';
+
+export default app;
+```
+
+Ou com roteamento modularizado:
+src/routes/users.js:
+```javascript
+import express from 'express';
+const router = express.Router();
+
+router.get('/', (req, res) => {
+  res.json([
+    { id: 1, name: 'João' },
+    { id: 2, name: 'Maria' }
+  ]);
+});
+
+router.post('/', (req, res) => {
+  res.status(201).json({
+    message: 'Usuário criado',
+    user: req.body
+  });
+});
+
+export default router;
+```
+
+src/app.js (com rotas modularizadas):
+```javascript
+import express from 'express';
+import usersRouter from './routes/users.js';
+
+const app = express();
+
+app.use(express.json());
+
+// Importar rotas
+app.use('/users', usersRouter);
+
+app.get('/', (req, res) => {
+  res.json({ message: 'API Express na Vercel!' });
+});
+
+export default app;
+```
+
+Qual escolher?
+Opção 1 → Se você tem poucas rotas (5-10 endpoints)
+Opção 2 → Se você tem um app Express complexo ou muitas rotas organizadas
+Próximos passos
+Escolha uma das opções
+Ajuste sua estrutura de arquivos
+Importante: Adicione "type": "module" no seu package.json
+Faça deploy com vercel ou via Git
+Qual das duas opções você quer implementar? Posso ajudar a adaptar seu código atual!
