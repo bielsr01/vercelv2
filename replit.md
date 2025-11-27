@@ -32,7 +32,7 @@ Preferred communication style: Simple, everyday language.
 - **Development**: Vite for HMR
 
 ### Data Storage
-- **Database**: PostgreSQL (Neon serverless)
+- **Database**: PostgreSQL (Supabase)
 - **ORM**: Drizzle ORM (type-safe queries, migrations)
 - **Schema**: Normalized structure for account holders, betting houses, surebet sets, and individual bets. Uses Decimal for financial calculations and UUID for primary keys.
 

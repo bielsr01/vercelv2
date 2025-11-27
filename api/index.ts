@@ -7,5 +7,5 @@ export default async function handler(req: any, res: any) {
     await initializeApp();
     isInitialized = true;
   }
-  return (app as any)(req, res);
+  return app(req, res);
 }
