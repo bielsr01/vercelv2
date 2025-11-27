@@ -1,0 +1,167 @@
+deu erro Microsoft Windows [versão 10.0.26200.7171] (c) Microsoft Corporation. Todos os direitos reservados. C:\Users\Gabriel\Downloads\vercelv2-main (1)\vercelv2-main>docker build -t betv4 . [+] Building 69.7s (14/14) FINISHED docker:desktop-linux => [internal] load build definition from Dockerfile 0.0s => => transferring dockerfile: 454B 0.0s => [internal] load metadata for docker.io/library/node:20-slim 2.7s => [auth] library/node:pull token for registry-1.docker.io 0.0s => [internal] load .dockerignore 0.0s => => transferring context: 151B 0.0s => [1/9] FROM docker.io/library/node:20-slim@sha256:fbb357f69d05c97333855b0846e4ef65462409728312df3c9ff12c94174 14.6s => => resolve docker.io/library/node:20-slim@sha256:fbb357f69d05c97333855b0846e4ef65462409728312df3c9ff12c941741 0.0s => => sha256:aa42edbc26fe12272cc806bf99cf4d5d6b2a2cf09f4b6f5492eff9604be18e84 448B / 448B 0.4s => => sha256:6c2b787b4c4591781a78ed49926828fe9c8ab50228f8ccf38a6ab8ac9a22ac80 1.71MB / 1.71MB 1.0s => => sha256:e96ce70b461ab9fac01418f8ac4e109475e7792d8b9d50a4e43db49543cc1d53 40.99MB / 40.99MB 9.5s => => sha256:667488fa52209fbc392b2a49e68f3c46df0c44d8b917f2453da1e5fac360c23e 3.31kB / 3.31kB 0.8s => => sha256:8e44f01296e3a6fdc31a671bee1c2259c5d5ee8b49f29aec42b5d2af15600296 28.23MB / 28.23MB 12.9s => => extracting sha256:8e44f01296e3a6fdc31a671bee1c2259c5d5ee8b49f29aec42b5d2af15600296 0.5s => => extracting sha256:667488fa52209fbc392b2a49e68f3c46df0c44d8b917f2453da1e5fac360c23e 0.0s => => extracting sha256:e96ce70b461ab9fac01418f8ac4e109475e7792d8b9d50a4e43db49543cc1d53 0.6s => => extracting sha256:6c2b787b4c4591781a78ed49926828fe9c8ab50228f8ccf38a6ab8ac9a22ac80 0.0s => => extracting sha256:aa42edbc26fe12272cc806bf99cf4d5d6b2a2cf09f4b6f5492eff9604be18e84 0.0s => [internal] load build context 0.2s => => transferring context: 2.76MB 0.2s => [2/9] RUN apt-get update && apt-get install -y python3 python3-pip python3-venv && rm -rf /v 37.6s => [3/9] RUN python3 -m venv /opt/venv 2.0s => [4/9] RUN pip install pdfplumber 4.9s => [5/9] WORKDIR /app 0.0s => [6/9] COPY package*.json ./ 0.0s => [7/9] RUN npm ci --only=production 7.2s => [8/9] COPY . . 0.1s => ERROR [9/9] RUN npm run build 0.3s ------ > [9/9] RUN npm run build: 0.271 0.271 > rest-express@1.0.0 build 0.271 > vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist 0.271 0.274 sh: 1: vite: not found ------ Dockerfile:20 -------------------- 18 | COPY . . 19 | 20 | >>> RUN npm run build 21 | 22 | EXPOSE 5000 -------------------- ERROR: failed to build: failed to solve: process "/bin/sh -c npm run build" did not complete successfully: exit code: 127 C:\Users\Gabriel\Downloads\vercelv2-main (1)\vercelv2-main>Show less
+
+O erro que você está enfrentando ocorre porque o comando vite build não está sendo encontrado no container. Isso geralmente acontece porque o pacote vite não foi instalado corretamente ou não está disponível no ambiente de produção.
+
+Por padrão, o comando npm ci --only=production instala apenas as dependências de produção listadas no package.json. Se o vite está listado como uma dependência de desenvolvimento (devDependencies), ele não será instalado.
+
+Como corrigir o problema:
+Certifique-se de que o vite está listado como dependência de produção: Verifique o arquivo package.json e veja se o vite está listado em dependencies ou devDependencies. Se ele estiver em devDependencies, mova-o para dependencies:
+
+"dependencies": {
+  "vite": "^4.0.0"
+}
+Depois, atualize o package-lock.json:
+
+npm install
+Instale todas as dependências (produção e desenvolvimento): No Dockerfile, substitua:
+
+RUN npm ci --only=production
+Por:
+
+RUN npm install
+Isso garantirá que todas as dependências, incluindo as de desenvolvimento, sejam instaladas.
+
+Use um build separado para produção: Para evitar que as dependências de desenvolvimento sejam incluídas na imagem final, você pode usar um multi-stage build no Dockerfile. Aqui está um exemplo atualizado:
+
+# Etapa 1: Build
+FROM node:20-slim AS builder
+
+# Instale as dependências
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+
+# Copie o código e construa o projeto
+COPY . .
+RUN npm run build
+
+# Etapa 2: Produção
+FROM node:20-slim
+
+# Instale apenas as dependências de produção
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+
+# Copie os arquivos construídos da etapa anterior
+COPY --from=builder /app/dist ./dist
+
+# Exponha a porta e defina o comando de inicialização
+EXPOSE 5000
+CMD ["node", "dist/server.js"]
+Esse Dockerfile cria uma imagem otimizada para produção, onde apenas os arquivos necessários para rodar a aplicação são incluídos.
+
+Reconstrua a imagem: Após ajustar o Dockerfile, reconstrua a imagem:
+
+docker build -t betv4 .
+Teste novamente: Rode o container para verificar se o problema foi resolvido:
+
+docker run -d -p 5000:5000 --name betv4-container betv4
+Se o problema persistir, me envie o conteúdo do seu package.json e o Dockerfile para que eu possa ajudar a ajustar o processo! 😊
+
+vou mandar o package.json e em outra mensagem enviar o dockerfile
+
+...loads\vercelv2-main (1)\vercelv2-main\package.json
+
+Obrigado por compartilhar o package.json. Pelo que vejo, o problema está relacionado ao fato de que o vite está listado em devDependencies. Como o comando npm ci --only=production no Dockerfile instala apenas as dependências de produção, o vite não está sendo instalado, resultando no erro vite: not found.
+
+Agora, por favor, envie o conteúdo do seu Dockerfile para que eu possa ajustar e corrigir o problema. 😊
+
+aqui
+
+...wnloads\vercelv2-main (1)\vercelv2-main\Dockerfile
+
+Obrigado por compartilhar o package.json e o Dockerfile. O problema está claro: o comando npm ci --only=production no Dockerfile está instalando apenas as dependências de produção, mas o vite está listado em devDependencies no package.json. Como resultado, o comando npm run build falha porque o vite não está disponível.
+
+Aqui está como você pode corrigir o problema:
+
+Solução 1: Instalar todas as dependências durante o build
+Se você deseja instalar todas as dependências (produção e desenvolvimento) para o processo de build, altere o Dockerfile para usar npm install em vez de npm ci --only=production:
+
+FROM node:20-slim
+
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install pdfplumber
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install  # Instala todas as dependências, incluindo devDependencies
+
+COPY . .
+
+RUN npm run build
+
+EXPOSE 5000
+
+ENV NODE_ENV=production
+ENV PORT=5000
+
+CMD ["node", "dist/index.js"]
+Essa abordagem é simples, mas pode resultar em uma imagem maior, pois todas as dependências de desenvolvimento serão incluídas.
+
+Solução 2: Usar Multi-Stage Build (Recomendado)
+Para criar uma imagem otimizada para produção, você pode usar um multi-stage build. Isso separa o processo de build (que requer dependências de desenvolvimento) do ambiente de produção (que só precisa das dependências de produção).
+
+Aqui está o Dockerfile ajustado:
+
+# Etapa 1: Build
+FROM node:20-slim AS builder
+
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install pdfplumber
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install  # Instala todas as dependências, incluindo devDependencies
+
+COPY . .
+
+RUN npm run build
+
+# Etapa 2: Produção
+FROM node:20-slim
+
+WORKDIR /app
+
+# Copie apenas as dependências de produção
+COPY package*.json ./
+RUN npm ci --only=production
+
+# Copie os arquivos construídos da etapa de build
+COPY --from=builder /app/dist ./dist
+
+EXPOSE 5000
+
+ENV NODE_ENV=production
+ENV PORT=5000
+
+CMD ["node", "dist/index.js"]
+Benefícios do Multi-Stage Build:
+A imagem final contém apenas as dependências de produção e os arquivos necessários, resultando em uma imagem menor e mais segura.
+As dependências de desenvolvimento, como o vite, são usadas apenas na etapa de build.
+Passos Finais
+Reconstrua a imagem:
+
+docker build -t betv4 .
+Teste o container:
+
+docker run -d -p 5000:5000 --name betv4-container betv4
+Acesse a aplicação: Abra http://localhost:5000⁠ no navegador para verificar se está funcionando.
+
+Se você ainda encontrar problemas ou precisar de mais ajuda, é só me avisar! 😊
