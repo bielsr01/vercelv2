@@ -1,5 +1,4 @@
 import type { Express } from "express";
-import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
 import { bets } from "@shared/schema";
@@ -26,7 +25,7 @@ const upload = multer({
 
 const pdfPlumberService = new PdfPlumberService();
 
-export async function registerRoutes(app: Express): Promise<Server> {
+export async function registerRoutes(app: Express): Promise<void> {
   setupAuth(app);
 
   app.get("/api/health", async (req, res) => {
@@ -556,6 +555,4 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  const httpServer = createServer(app);
-  return httpServer;
 }

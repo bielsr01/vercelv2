@@ -1,0 +1,1145 @@
+Perfeito! Agora vejo que você já está usando Express e tem um setup com Vite para o frontend. Vejo também que você já tem um script vercel-build configurado, o que é ótimo!
+
+Pelo seu package.json, vejo que você está tentando fazer o build para api/index.ts. Isso está correto para o Vercel. Vou te orientar sobre o que você precisa fazer:
+
+Estrutura Necessária
+Você precisa ter um arquivo /api/index.ts (ou .js/.mjs) na raiz do projeto que funcione como um wrapper para o seu Express. Veja como fazer:
+
+Crie o arquivo api/index.ts:
+
+import express from 'express';
+import serverlessExpress from '@vendia/serverless-express';
+
+// Importe seu app Express existente
+// Se você já tem um app.ts ou similar no /server, importe dele
+const app = express();
+
+// Configure suas rotas aqui ou importe de outro arquivo
+// Exemplo:
+app.use(express.json());
+
+app.post('/api/login', (req, res) => {
+  // Sua lógica de login
+  res.json({ success: true });
+});
+
+// Adicione todas as outras rotas...
+
+// Exporte para o Vercel usando serverless-express
+export default serverlessExpress({ app });
+Ajuste no vercel.json
+Crie ou atualize o arquivo vercel.json na raiz:
+
+{
+  "version": 2,
+  "buildCommand": "npm run vercel-build",
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    }
+  ],
+  "functions": {
+    "api/index.mjs": {
+      "memory": 1024,
+      "maxDuration": 10
+    }
+  }
+}
+Pontos Importantes
+1. Variáveis de Ambiente
+
+Configure todas as suas variáveis de ambiente no dashboard do Vercel (Settings → Environment Variables). Não use arquivos .env localmente para produção.
+
+2. Banco de Dados
+
+Vejo que você está usando @neondatabase/serverless e Drizzle. Perfeito! O Neon é otimizado para serverless. Certifique-se de usar connection pooling:
+
+import { neon } from '@neondatabase/serverless';
+
+const sql = neon(process.env.DATABASE_URL);
+3. Sessions
+
+Vejo que você usa express-session e connect-pg-simple. Em ambiente serverless, sessions baseadas em memória não funcionam bem. Use o PostgreSQL store que você já tem configurado:
+
+import session from 'express-session';
+import connectPgSimple from 'connect-pg-simple';
+
+const PgSession = connectPgSimple(session);
+
+app.use(session({
+  store: new PgSession({
+    conString: process.env.DATABASE_URL,
+    createTableIfMissing: true
+  }),
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: { maxAge: 30 * 24 * 60 * 60 * 1000 }
+}));
+4. WebSockets
+
+Vejo que você tem ws instalado. Importante: WebSockets tradicionais não funcionam no Vercel. Você precisará usar alternativas como:
+
+Vercel Edge Functions com Server-Sent Events (SSE)
+Serviços externos como Pusher ou Ably
+Polling como fallback
+Estrutura Recomendada do Projeto
+/
+├── api/
+│   └── index.ts          # Seu Express app para Vercel
+├── server/
+│   └── index.ts          # Seu servidor local (desenvolvimento)
+├── client/               # Seu frontend React
+├── vercel.json
+└── package.json
+Você consegue me mostrar como está estruturado seu /server/index.ts atual? Assim posso te ajudar a adaptá-lo perfeitamente para o /api/index.ts!
+
+Avatar for bielsr01-4654
+import serverlessExpress from '@vendia/serverless-express';
+import app, { initializeApp } from "../server/app";
+
+let serverlessExpressInstance: any;
+
+async function setup() {
+  await initializeApp();
+  serverlessExpressInstance = serverlessExpress({ app });
+}
+
+const setupPromise = setup();
+
+export default async function handler(req: any, res: any) {
+  await setupPromise;
+  return serverlessExpressInstance(req, res);
+}
+
+Ótimo! Você já está no caminho certo com o serverless-express. No entanto, vejo um problema: você está exportando uma função handler, mas o Vercel espera um formato específico.
+
+Ajuste no seu api/index.ts
+Modifique seu arquivo para este formato:
+
+import serverlessExpress from '@vendia/serverless-express';
+import app, { initializeApp } from "../server/app";
+
+let serverlessExpressInstance: any;
+let isInitialized = false;
+
+async function setup() {
+  if (!isInitialized) {
+    await initializeApp();
+    serverlessExpressInstance = serverlessExpress({ app });
+    isInitialized = true;
+  }
+}
+
+// Inicie o setup
+const setupPromise = setup();
+
+// Exporte no formato que o Vercel espera
+export default async function (req: any, res: any) {
+  await setupPromise;
+  return serverlessExpressInstance(req, res);
+}
+Verifique seu vercel.json
+Certifique-se de que seu vercel.json está assim:
+
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api"
+    }
+  ],
+  "functions": {
+    "api/**/*.{js,ts,mjs}": {
+      "memory": 1024,
+      "maxDuration": 10
+    }
+  }
+}
+Checklist de Problemas Comuns
+Agora que vejo sua estrutura, aqui estão os pontos que podem estar causando o problema:
+
+1. Caminhos das Rotas
+
+No seu server/app.ts, verifique se suas rotas estão definidas corretamente. Se você tem rotas como:
+
+app.post('/login', ...)  // ❌ Pode não funcionar no Vercel
+Mude para:
+
+app.post('/api/login', ...)  // ✅ Funcionará no Vercel
+2. Configuração do Body Parser
+
+Certifique-se de que está configurado ANTES das rotas:
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+3. CORS
+
+Se seu frontend estiver em um domínio diferente, adicione CORS:
+
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  next();
+});
+4. Inicialização Assíncrona
+
+Se o initializeApp() faz conexão com banco de dados, certifique-se de que está usando connection string do ambiente:
+
+// No seu server/app.ts ou onde configura o DB
+const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+Estrutura do Output
+Seu script vercel-build está criando api/index.mjs. Certifique-se de que:
+
+O arquivo api/index.mjs é gerado após o build
+Todas as dependências estão sendo incluídas corretamente
+Teste Local com Vercel CLI
+Antes de fazer deploy, teste localmente:
+
+npm i -g vercel
+vercel dev
+Isso simulará o ambiente do Vercel e você poderá ver os erros reais.
+
+Você pode me mostrar:
+
+Como está estruturado seu server/app.ts?
+Como suas rotas estão definidas (com exemplos)?
+Está aparecendo algum erro específico nos logs do Vercel quando você tenta acessar as APIs?
+Isso me ajudará a identificar exatamente onde está o problema!
+
+Avatar for bielsr01-4654
+import express, { type Request, Response, NextFunction } from "express";
+import { registerRoutes } from "./routes";
+
+const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+
+app.set('trust proxy', 1);
+
+app.use((req, res, next) => {
+  const start = Date.now();
+  const path = req.path;
+  let capturedJsonResponse: Record | undefined = undefined;
+
+  const originalResJson = res.json;
+  res.json = function (bodyJson, ...args) {
+    capturedJsonResponse = bodyJson;
+    return originalResJson.apply(res, [bodyJson, ...args]);
+  };
+
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    if (path.startsWith("/api")) {
+      let logLine = ${req.method} ${path} ${res.statusCode} in ${duration}ms;
+      if (capturedJsonResponse) {
+        const str = JSON.stringify(capturedJsonResponse);
+        logLine += :: ${str.length &gt; 100 ? str.slice(0, 100) + '...' : str};
+      }
+      console.log(logLine);
+    }
+  });
+
+  next();
+});
+
+let isInitialized = false;
+
+export async function initializeApp() {
+  if (isInitialized) return app;
+
+  await registerRoutes(app);
+
+  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    const status = err.status || err.statusCode || 500;
+    const message = err.message || "Internal Server Error";
+    res.status(status).json({ message });
+  });
+
+  isInitialized = true;
+  return app;
+}
+
+export default app;
+
+Perfeito! Agora vejo a estrutura completa. O código está bem organizado. Agora preciso ver o registerRoutes para entender como suas rotas estão configuradas, mas já posso te dar algumas orientações importantes.
+
+Problemas Identificados e Soluções
+1. Ordem de Inicialização
+
+O app está sendo exportado ANTES de ser inicializado. Isso pode causar problemas no Vercel. Vamos ajustar:
+
+server/app.ts - Mantenha assim (está correto):
+
+import express, { type Request, Response, NextFunction } from "express";
+import { registerRoutes } from "./routes";
+
+const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+
+app.set('trust proxy', 1);
+
+// Seu middleware de logging (está ótimo)
+app.use((req, res, next) => {
+  const start = Date.now();
+  const path = req.path;
+  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+
+  const originalResJson = res.json;
+  res.json = function (bodyJson, ...args) {
+    capturedJsonResponse = bodyJson;
+    return originalResJson.apply(res, [bodyJson, ...args]);
+  };
+
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    if (path.startsWith("/api")) {
+      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      if (capturedJsonResponse) {
+        const str = JSON.stringify(capturedJsonResponse);
+        logLine += ` :: ${str.length > 100 ? str.slice(0, 100) + '...' : str}`;
+      }
+      console.log(logLine);
+    }
+  });
+
+  next();
+});
+
+let isInitialized = false;
+
+export async function initializeApp() {
+  if (isInitialized) return app;
+  
+  await registerRoutes(app);
+  
+  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    const status = err.status || err.statusCode || 500;
+    const message = err.message || "Internal Server Error";
+    res.status(status).json({ message });
+  });
+  
+  isInitialized = true;
+  return app;
+}
+
+export default app;
+2. Ajuste no api/index.ts
+
+import serverlessExpress from '@vendia/serverless-express';
+import app, { initializeApp } from "../server/app";
+
+let serverlessExpressInstance: any = null;
+let initPromise: Promise<void> | null = null;
+
+async function setup() {
+  if (!initPromise) {
+    initPromise = (async () => {
+      try {
+        await initializeApp();
+        serverlessExpressInstance = serverlessExpress({ app });
+        console.log('✅ App initialized successfully');
+      } catch (error) {
+        console.error('❌ Failed to initialize app:', error);
+        throw error;
+      }
+    })();
+  }
+  return initPromise;
+}
+
+export default async function handler(req: any, res: any) {
+  try {
+    await setup();
+    
+    if (!serverlessExpressInstance) {
+      throw new Error('Serverless instance not initialized');
+    }
+    
+    return serverlessExpressInstance(req, res);
+  } catch (error) {
+    console.error('Handler error:', error);
+    res.status(500).json({ 
+      message: 'Internal Server Error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}
+3. Configuração Crítica do vercel.json
+
+{
+  "version": 2,
+  "buildCommand": "npm run vercel-build",
+  "outputDirectory": "dist/public",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/api"
+    }
+  ],
+  "functions": {
+    "api/index.mjs": {
+      "memory": 1024,
+      "maxDuration": 10
+    }
+  }
+}
+Perguntas Importantes
+Para te ajudar completamente, preciso saber:
+
+1. Como estão definidas suas rotas no registerRoutes?
+
+São algo como:
+typescript
+app.post('/api/login', ...) // ✅ Com /api
+// ou
+app.post('/login', ...) // ❌ Sem /api
+
+2. Você está usando sessões, autenticação ou WebSockets?
+
+Vejo que tem passport e express-session no package.json. Isso precisa de configuração especial no serverless.
+
+3. Como está o arquivo de rotas?
+
+Pode me mostrar um exemplo do server/routes.ts ou onde o registerRoutes está definido?
+
+4. Quando você faz deploy, qual erro aparece especificamente?
+
+Você pode verificar os logs no Vercel em:
+
+Dashboard do projeto → Deployments → Clique no deployment → Functions → Veja os logs
+Isso me dará informações cruciais sobre o que está falhando!
+
+Avatar for bielsr01-4654
+import type { Express } from "express";
+import { createServer, type Server } from "http";
+import { storage } from "./storage";
+import { db } from "./db";
+import { bets } from "@shared/schema";
+import { eq } from "drizzle-orm";
+import { PdfPlumberService } from "./pdf-plumber-service";
+import { insertAccountHolderSchema, insertBettingHouseSchema, insertSurebetSetSchema, insertBetSchema, insertUserSchema } from "@shared/schema";
+import { z } from "zod";
+import multer from "multer";
+import { setupAuth, requireAuth, requireAdmin, hashPassword } from "./jwt-auth";
+
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 4  1024  1024,
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF documents are allowed'));
+    }
+  }
+});
+
+const pdfPlumberService = new PdfPlumberService();
+
+export async function registerRoutes(app: Express): Promise {
+  setupAuth(app);
+
+  app.get("/api/health", async (req, res) => {
+    const diagnostics: any = {
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || "unknown",
+      hasSupabaseUrl: !!process.env.SUPABASE_DATABASE_URL,
+      hasDatabaseUrl: !!process.env.DATABASE_URL,
+      hasSessionSecret: !!process.env.SESSION_SECRET,
+      isAuthenticated: !!req.user,
+    };
+
+try {
+  const result = await db.execute("SELECT 1 as test");
+  diagnostics.database = "connected";
+} catch (error: any) {
+  diagnostics.database = "error: " + error.message;
+}
+console.log("[Health] Diagnostics:", JSON.stringify(diagnostics));
+    res.json(diagnostics);
+  });
+
+  app.get("/api/users", requireAdmin, async (req, res) => {
+    try {
+      const users = await storage.getAllUsers();
+      const usersWithoutPassword = users.map(({ password, ...user }) => user);
+      res.json(usersWithoutPassword);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      res.status(500).json({ error: "Failed to fetch users" });
+    }
+  });
+
+  app.post("/api/users", requireAdmin, async (req, res) => {
+    try {
+      const data = insertUserSchema.parse(req.body);
+      const hashedData = {
+        ...data,
+        password: await hashPassword(data.password),
+      };
+      const user = await storage.createUser(hashedData);
+      const { password, ...userWithoutPassword } = user;
+      res.json(userWithoutPassword);
+    } catch (error) {
+      console.error("Error creating user:", error);
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid data", details: error.errors });
+      } else {
+        res.status(500).json({ error: "Failed to create user" });
+      }
+    }
+  });
+
+  app.put("/api/users/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (req.user!.role !== 'admin' && req.user!.id !== id) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+  const data = insertUserSchema.partial().parse(req.body);
+  const updateData: any = { ...data };
+  
+  if (data.password) {
+    updateData.password = await hashPassword(data.password);
+  }
+
+  const user = await storage.updateUser(id, updateData);
+  const { password, ...userWithoutPassword } = user;
+  res.json(userWithoutPassword);
+} catch (error) {
+  console.error("Error updating user:", error);
+  res.status(500).json({ error: "Failed to update user" });
+}
+  
+});
+
+  app.delete("/api/users/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      await storage.deleteUser(id);
+      res.sendStatus(204);
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      res.status(500).json({ error: "Failed to delete user" });
+    }
+  });
+
+  app.get("/api/account-holders", requireAuth, async (req, res) => {
+    try {
+      const accountHolders = await storage.getAccountHolders(req.user!.id);
+      res.json(accountHolders);
+    } catch (error) {
+      console.error("Error fetching account holders:", error);
+      res.status(500).json({ error: "Failed to fetch account holders" });
+    }
+  });
+
+  app.post("/api/account-holders", requireAuth, async (req, res) => {
+    try {
+      const data = insertAccountHolderSchema.parse(req.body);
+      const accountHolder = await storage.createAccountHolder({ ...data, userId: req.user!.id });
+      res.json(accountHolder);
+    } catch (error) {
+      console.error("Error creating account holder:", error);
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid data", details: error.errors });
+      } else {
+        res.status(500).json({ error: "Failed to create account holder" });
+      }
+    }
+  });
+
+  app.put("/api/account-holders/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const data = insertAccountHolderSchema.partial().parse(req.body);
+      const accountHolder = await storage.updateAccountHolder(id, data);
+      res.json(accountHolder);
+    } catch (error) {
+      console.error("Error updating account holder:", error);
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid data", details: error.errors });
+      } else if (error instanceof Error && error.message === 'Account holder not found') {
+        res.status(404).json({ error: "Account holder not found" });
+      } else {
+        res.status(500).json({ error: "Failed to update account holder" });
+      }
+    }
+  });
+
+  app.delete("/api/account-holders/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      await storage.deleteAccountHolder(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting account holder:", error);
+      res.status(500).json({ error: "Failed to delete account holder" });
+    }
+  });
+
+  app.get("/api/betting-houses", requireAuth, async (req, res) => {
+    try {
+      const { accountHolderId } = req.query;
+      let bettingHouses;
+
+  if (accountHolderId) {
+    bettingHouses = await storage.getBettingHousesByHolder(accountHolderId as string);
+  } else {
+    bettingHouses = await storage.getBettingHouses(req.user!.id);
+  }
+  
+  res.json(bettingHouses);
+} catch (error) {
+  console.error("Error fetching betting houses:", error);
+  res.status(500).json({ error: "Failed to fetch betting houses" });
+}
+  
+});
+
+  app.post("/api/betting-houses", requireAuth, async (req, res) => {
+    try {
+      const data = insertBettingHouseSchema.parse(req.body);
+      const bettingHouse = await storage.createBettingHouse({ ...data, userId: req.user!.id });
+      res.json(bettingHouse);
+    } catch (error) {
+      console.error("Error creating betting house:", error);
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid data", details: error.errors });
+      } else {
+        res.status(500).json({ error: "Failed to create betting house" });
+      }
+    }
+  });
+
+  app.put("/api/betting-houses/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const data = insertBettingHouseSchema.partial().parse(req.body);
+      const bettingHouse = await storage.updateBettingHouse(id, data);
+      res.json(bettingHouse);
+    } catch (error) {
+      console.error("Error updating betting house:", error);
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid data", details: error.errors });
+      } else if (error instanceof Error && error.message === 'Betting house not found') {
+        res.status(404).json({ error: "Betting house not found" });
+      } else {
+        res.status(500).json({ error: "Failed to update betting house" });
+      }
+    }
+  });
+
+  app.delete("/api/betting-houses/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      await storage.deleteBettingHouse(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting betting house:", error);
+      res.status(500).json({ error: "Failed to delete betting house" });
+    }
+  });
+
+  app.get("/api/surebet-sets", requireAuth, async (req, res) => {
+    try {
+      const surebetSets = await storage.getSurebetSets(req.user!.id);
+      res.json(surebetSets);
+    } catch (error) {
+      console.error("Error fetching surebet sets:", error);
+      res.status(500).json({ error: "Failed to fetch surebet sets" });
+    }
+  });
+
+  app.get("/api/surebet-sets/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const surebetSet = await storage.getSurebetSetById(id);
+      if (!surebetSet) {
+        res.status(404).json({ error: "Surebet set not found" });
+        return;
+      }
+      res.json(surebetSet);
+    } catch (error) {
+      console.error("Error fetching surebet set:", error);
+      res.status(500).json({ error: "Failed to fetch surebet set" });
+    }
+  });
+
+  app.post("/api/surebet-sets", requireAuth, async (req, res) => {
+    try {
+      const { surebetSet, bets: setBets } = req.body;
+
+  if (!Array.isArray(setBets) || setBets.length &lt; 2 || setBets.length &gt; 3) {
+    res.status(400).json({ error: "Surebet must have 2 or 3 bets" });
+    return;
+  }
+  
+  const surebetData = insertSurebetSetSchema.parse(surebetSet);
+  
+  const createdSet = await storage.createSurebetSet({ ...surebetData, userId: req.user!.id });
+  
+  const createdBets = [];
+  for (const betData of setBets) {
+    const validatedBet = insertBetSchema.parse({
+      ...betData,
+      surebetSetId: createdSet.id
+    });
+    const createdBet = await storage.createBet(validatedBet);
+    createdBets.push(createdBet);
+  }
+  
+  res.json({
+    surebetSet: createdSet,
+    bets: createdBets
+  });
+} catch (error) {
+  console.error("Error creating surebet set:", error);
+  if (error instanceof z.ZodError) {
+    res.status(400).json({ error: "Invalid data", details: error.errors });
+  } else {
+    res.status(500).json({ error: "Failed to create surebet set" });
+  }
+}
+  
+});
+
+  app.put("/api/surebet-sets/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const data = insertSurebetSetSchema.partial().parse(req.body);
+      const surebetSet = await storage.updateSurebetSet(id, data);
+      res.json(surebetSet);
+    } catch (error) {
+      console.error("Error updating surebet set:", error);
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid data", details: error.errors });
+      } else if (error instanceof Error && error.message === 'Surebet set not found') {
+        res.status(404).json({ error: "Surebet set not found" });
+      } else {
+        res.status(500).json({ error: "Failed to update surebet set" });
+      }
+    }
+  });
+
+  app.delete("/api/surebet-sets/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      await storage.deleteSurebetSet(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting surebet set:", error);
+      res.status(500).json({ error: "Failed to delete surebet set" });
+    }
+  });
+
+  app.put("/api/bets/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updateData = insertBetSchema.partial().parse(req.body);
+
+  const updatedBet = await storage.updateBet(id, updateData);
+  
+  if (updatedBet.surebetSetId &amp;&amp; (updateData.odd !== undefined || updateData.stake !== undefined)) {
+    const allBets = await db.select().from(bets).where(eq(bets.surebetSetId, updatedBet.surebetSetId));
+    
+    if (allBets.length === 2 || allBets.length === 3) {
+      const totalStakes = allBets.reduce((sum, bet) =&gt; sum + parseFloat(String(bet.stake)), 0);
+      
+      for (const bet of allBets) {
+        const stake = parseFloat(String(bet.stake));
+        const odd = parseFloat(String(bet.odd));
+        const profitPotential = (stake * odd) - totalStakes;
+        
+        await storage.updateBet(bet.id, { potentialProfit: String(profitPotential) });
+      }
+    }
+  }
+  
+  if (updatedBet.surebetSetId &amp;&amp; updateData.result) {
+    const allBets = await db.select().from(bets).where(eq(bets.surebetSetId, updatedBet.surebetSetId));
+    const allHaveResults = allBets.every(b =&gt; b.result != null);
+    
+    console.log(`[PROFIT CALC] Surebet ${updatedBet.surebetSetId}: ${allBets.length} bets, all have results: ${allHaveResults}`);
+    
+    if (allHaveResults &amp;&amp; (allBets.length === 2 || allBets.length === 3)) {
+      const calculateReturn = (bet: typeof allBets[0]): number =&gt; {
+        const stake = parseFloat(String(bet.stake));
+        const odd = parseFloat(String(bet.odd));
+        
+        switch (bet.result) {
+          case "won":
+            return stake * odd;
+          case "lost":
+            return 0;
+          case "returned":
+            return stake;
+          case "half_won":
+            return (stake / 2) * odd + (stake / 2);
+          case "half_returned":
+            return stake / 2;
+          default:
+            return 0;
+        }
+      };
+      
+      const totalReturn = allBets.reduce((sum, bet) =&gt; sum + calculateReturn(bet), 0);
+      const totalInvested = allBets.reduce((sum, bet) =&gt; sum + parseFloat(String(bet.stake)), 0);
+      const actualProfit = totalReturn - totalInvested;
+      
+      console.log(`[PROFIT CALC] Total return: ${totalReturn}, Total invested: ${totalInvested}, Actual profit: ${actualProfit}`);
+      console.log(`[PROFIT CALC] Bet results: ${allBets.map((b, i) =&gt; `bet${i+1}: ${b.result}`).join(', ')}`);
+      
+      for (const bet of allBets) {
+        console.log(`[PROFIT CALC] Updating bet ${bet.id} with actualProfit: ${actualProfit}`);
+        await storage.updateBet(bet.id, { actualProfit: String(actualProfit) });
+      }
+      
+      await storage.updateSurebetSet(updatedBet.surebetSetId, { status: "resolved" });
+      console.log(`[PROFIT CALC] Surebet set ${updatedBet.surebetSetId} marked as resolved`);
+    }
+  }
+  
+  res.json(updatedBet);
+} catch (error) {
+  console.error("Error updating bet:", error);
+  if (error instanceof z.ZodError) {
+    res.status(400).json({ error: "Invalid data", details: error.errors });
+  } else if (error instanceof Error &amp;&amp; error.message === 'Bet not found') {
+    res.status(404).json({ error: "Bet not found" });
+  } else {
+    res.status(500).json({ error: "Failed to update bet" });
+  }
+}
+  
+});
+
+  app.patch("/api/surebet-sets/:id/status", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const body = z.object({ 
+        status: z.enum(["pending", "resolved"]).optional(),
+        isChecked: z.boolean().optional()
+      }).parse(req.body);
+
+  const updatedSet = await storage.updateSurebetSet(id, body);
+  res.json(updatedSet);
+} catch (error: any) {
+  console.error("Error updating surebet set:", error);
+  res.status(400).json({ error: error.message || "Invalid request data" });
+}
+  
+});
+
+  app.post("/api/surebet-sets/:id/reset", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+  const allBets = await db.select().from(bets).where(eq(bets.surebetSetId, id));
+  
+  for (const bet of allBets) {
+    await storage.updateBet(bet.id, { 
+      result: null, 
+      actualProfit: null 
+    });
+  }
+  
+  const updatedSet = await storage.updateSurebetSet(id, { status: "pending" });
+  
+  res.json(updatedSet);
+} catch (error: any) {
+  console.error("Error resetting surebet set:", error);
+  res.status(500).json({ error: error.message || "Failed to reset surebet set" });
+}
+  
+});
+
+  app.post("/api/ocr/process", requireAuth, upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        res.status(400).json({ error: "No file provided" });
+        return;
+      }
+
+  const customPrompt = req.body.prompt || null;
+  console.log(`AI OCR disabled; using pdfplumber for PDF processing`);
+  
+  const ocrResult = await pdfPlumberService.processDocument(
+    req.file.buffer,
+    req.file.originalname,
+    req.file.mimetype,
+    customPrompt
+  );
+  
+  res.json({
+    success: true,
+    data: ocrResult
+  });
+} catch (error) {
+  console.error("pdfplumber processing error:", error);
+  res.status(400).json({ 
+    error: "Failed to process OCR",
+    message: error instanceof Error ? error.message : "Unknown error"
+  });
+}
+  
+});
+
+  app.post("/api/ocr/process-batch", requireAuth, upload.array('files', 50), async (req, res) => {
+    try {
+      const files = req.files as Express.Multer.File[];
+
+  if (!files || files.length === 0) {
+    res.status(400).json({ error: "No files provided" });
+    return;
+  }
+
+  console.log(`Batch processing ${files.length} PDF(s)...`);
+
+  const results = await Promise.all(
+    files.map(async (file) =&gt; {
+      try {
+        const ocrResult = await pdfPlumberService.processDocument(
+          file.buffer,
+          file.originalname,
+          file.mimetype,
+          undefined
+        );
+
+        return {
+          fileName: file.originalname,
+          success: true,
+          data: ocrResult
+        };
+      } catch (error) {
+        console.error(`Error processing ${file.originalname}:`, error);
+        return {
+          fileName: file.originalname,
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error"
+        };
+      }
+    })
+  );
+
+  const successCount = results.filter(r =&gt; r.success).length;
+  console.log(`Batch processing complete: ${successCount}/${files.length} successful`);
+
+  res.json({
+    success: true,
+    results
+  });
+} catch (error) {
+  console.error("Batch processing error:", error);
+  res.status(500).json({
+    error: "Failed to process batch",
+    message: error instanceof Error ? error.message : "Unknown error"
+  });
+}
+  
+});
+
+  app.get("/api/admin/migration/export-sql", requireAdmin, async (req, res) => {
+    try {
+      const { MigrationService } = await import("./migration-service");
+      const migrationService = new MigrationService();
+      const sqlContent = await migrationService.exportToSQL();
+
+  res.setHeader('Content-Type', 'application/sql');
+  res.setHeader('Content-Disposition', 'attachment; filename="supabase_migration.sql"');
+  res.send(sqlContent);
+} catch (error) {
+  console.error("Export error:", error);
+  res.status(500).json({ 
+    error: error instanceof Error ? error.message : "Export failed" 
+  });
+}
+  
+});
+
+  app.get("/api/admin/migration/stats", requireAdmin, async (req, res) => {
+    try {
+      const { MigrationService } = await import("./migration-service");
+      const migrationService = new MigrationService();
+      const stats = await migrationService.getStats();
+
+  res.json(stats);
+} catch (error) {
+  console.error("Stats error:", error);
+  res.status(500).json({ 
+    error: error instanceof Error ? error.message : "Failed to get stats" 
+  });
+}
+  
+});
+
+  const httpServer = createServer(app);
+  return httpServer;
+}
+
+Perfeito! Agora vejo tudo claramente. Existem alguns problemas críticos que estão impedindo suas APIs de funcionarem no Vercel:
+
+Problemas Identificados
+1. WebSockets/HTTP Server
+Você está retornando um httpServer no final, mas no Vercel não precisamos disso para serverless functions.
+
+2. Autenticação com Sessions
+O setupAuth provavelmente usa sessions, que precisam de configuração especial no serverless.
+
+3. Upload de Arquivos
+Multer com memoryStorage funciona, mas tem limites no Vercel.
+
+Solução Completa
+1. Ajuste o server/routes.ts
+Modifique o final do arquivo para remover o HTTP server:
+
+export async function registerRoutes(app: Express): Promise<void> {
+  setupAuth(app);
+
+  // ... todas suas rotas (mantém como está) ...
+
+  // ❌ REMOVA ESTAS LINHAS:
+  // const httpServer = createServer(app);
+  // return httpServer;
+  
+  // ✅ Apenas retorne void ou nada
+}
+2. Verifique o setupAuth em server/jwt-auth.ts
+O arquivo de autenticação precisa estar configurado para funcionar no serverless. Provavelmente você tem algo assim:
+
+// Se estiver usando sessions em memória, MUDE PARA:
+import session from 'express-session';
+import connectPgSimple from 'connect-pg-simple';
+
+export function setupAuth(app: Express) {
+  const PgSession = connectPgSimple(session);
+  
+  app.use(session({
+    store: new PgSession({
+      conString: process.env.DATABASE_URL,
+      createTableIfMissing: true,
+    }),
+    secret: process.env.SESSION_SECRET || 'fallback-secret-change-in-production',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { 
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 dias
+      secure: process.env.NODE_ENV === 'production', // HTTPS apenas em produção
+      sameSite: 'lax'
+    }
+  }));
+
+  // resto da configuração...
+}
+3. Ajuste o api/index.ts
+import serverlessExpress from '@vendia/serverless-express';
+import app, { initializeApp } from "../server/app";
+
+let serverlessExpressInstance: any = null;
+let isInitialized = false;
+
+async function setup() {
+  if (isInitialized) return;
+  
+  try {
+    console.log('🚀 Initializing app...');
+    await initializeApp();
+    serverlessExpressInstance = serverlessExpress({ app });
+    isInitialized = true;
+    console.log('✅ App initialized successfully');
+  } catch (error) {
+    console.error('❌ Failed to initialize app:', error);
+    throw error;
+  }
+}
+
+// Inicialize na primeira importação
+const initPromise = setup();
+
+export default async function handler(req: any, res: any) {
+  try {
+    // Aguarde a inicialização
+    await initPromise;
+    
+    if (!serverlessExpressInstance) {
+      throw new Error('Serverless instance not initialized');
+    }
+    
+    return serverlessExpressInstance(req, res);
+  } catch (error) {
+    console.error('❌ Handler error:', error);
+    return res.status(500).json({ 
+      message: 'Internal Server Error',
+      error: process.env.NODE_ENV === 'development' ? String(error) : undefined
+    });
+  }
+}
+4. Atualize o vercel.json
+{
+  "version": 2,
+  "buildCommand": "npm run vercel-build",
+  "outputDirectory": "dist/public",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api"
+    }
+  ],
+  "functions": {
+    "api/index.mjs": {
+      "memory": 1024,
+      "maxDuration": 30
+    }
+  }
+}
+5. Configure as Variáveis de Ambiente no Vercel
+No Dashboard do Vercel, vá em Settings → Environment Variables e adicione:
+
+DATABASE_URL=sua_connection_string_aqui
+SESSION_SECRET=seu_secret_seguro_aqui
+NODE_ENV=production
+6. Ajuste o vercel-build script
+No seu package.json, o script já está bom, mas certifique-se:
+
+"vercel-build": "vite build && esbuild api/index.ts --platform=node --bundle --format=esm --outfile=api/index.mjs --external:pg-native --external:better-sqlite3 --external:mysql2 --external:tedious --external:oracledb"
+Limitações Importantes do Vercel
+1. Tamanho de Upload
+
+Limite de 4.5 MB por request no Hobby plan
+Seu limite de 4 MB no multer está ok
+2. Timeout
+
+Máximo 10 segundos no Hobby
+Se processar PDFs demorar muito, considere fazer isso assíncrono ou upgrade para Pro
+3. PDF Processing
+
+O PdfPlumberService precisa funcionar no ambiente Node.js do Vercel
+Se usar binários externos (Python, etc.), não funcionará
+Teste Local Primeiro
+Antes de fazer deploy, teste localmente:
+
+npm i -g vercel
+vercel dev
+Acesse http://localhost:3000/api/health e veja se funciona.
+
+Debugging no Vercel
+Após o deploy, veja os logs:
+
+Vá no Dashboard → seu projeto
+Clique no deployment mais recente
+Vá em Functions → clique em api/index.mjs
+Veja os logs de erro
+Me diga se aparecer algum erro específico nos logs que eu te ajudo a resolver!
