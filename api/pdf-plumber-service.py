@@ -5,6 +5,7 @@ from io import BytesIO
 import traceback
 import re
 from datetime import datetime
+import sys
 
 try:
     import pdfplumber
@@ -634,23 +635,55 @@ def extrair_dados_pdf_bytes(pdf_bytes):
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
+            print("[PDF Service] Starting request processing", file=sys.stderr)
+            
             if not pdfplumber:
+                print("[PDF Service] ERROR: pdfplumber not installed", file=sys.stderr)
                 self.send_error_response(500, 'pdfplumber not installed')
                 return
                 
             content_length = int(self.headers.get('Content-Length', 0))
+            
+            if content_length == 0:
+                print("[PDF Service] ERROR: No data provided", file=sys.stderr)
+                self.send_error_response(400, 'No data provided')
+                return
+            
+            print(f"[PDF Service] Content length: {content_length}", file=sys.stderr)
+            
             post_data = self.rfile.read(content_length)
             
-            data = json.loads(post_data.decode('utf-8'))
+            try:
+                data = json.loads(post_data.decode('utf-8'))
+            except json.JSONDecodeError as e:
+                print(f"[PDF Service] ERROR: Invalid JSON: {str(e)}", file=sys.stderr)
+                self.send_error_response(400, f'Invalid JSON: {str(e)}')
+                return
             
             if 'pdf' not in data:
+                print("[PDF Service] ERROR: PDF field not found", file=sys.stderr)
                 self.send_error_response(400, 'PDF not provided')
                 return
             
+            print("[PDF Service] PDF data received", file=sys.stderr)
+            
             pdf_base64 = data['pdf']
-            pdf_bytes = base64.b64decode(pdf_base64)
+            
+            if ',' in pdf_base64:
+                pdf_base64 = pdf_base64.split(',')[1]
+            
+            try:
+                pdf_bytes = base64.b64decode(pdf_base64)
+            except Exception as e:
+                print(f"[PDF Service] ERROR: Invalid base64: {str(e)}", file=sys.stderr)
+                self.send_error_response(400, f'Invalid base64 encoding: {str(e)}')
+                return
+            
+            print(f"[PDF Service] PDF decoded, size: {len(pdf_bytes)} bytes", file=sys.stderr)
             
             result = extrair_dados_pdf_bytes(pdf_bytes)
+            
+            print(f"[PDF Service] Processing complete", file=sys.stderr)
             
             self.send_json_response(200, {
                 'success': True,
@@ -660,8 +693,8 @@ class handler(BaseHTTPRequestHandler):
         except Exception as e:
             error_msg = str(e)
             stack_trace = traceback.format_exc()
-            print(f"Error processing PDF: {error_msg}")
-            print(f"Stack trace: {stack_trace}")
+            print(f"[PDF Service] ERROR: {error_msg}", file=sys.stderr)
+            print(f"[PDF Service] Stack trace: {stack_trace}", file=sys.stderr)
             self.send_error_response(500, f'Error processing PDF: {error_msg}')
     
     def send_json_response(self, status_code, data):

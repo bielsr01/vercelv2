@@ -1,0 +1,767 @@
+Perfeito! Vamos configurar as funções Python na Vercel para usar o pdfplumber que já está funcionando localmente.
+
+🐍 CONFIGURAÇÃO COMPLETA: Python Functions na Vercel
+Passo 1: Criar requirements.txt na raiz do projeto
+Crie um arquivo requirements.txt na raiz do projeto (não dentro de /api):
+
+pdfplumber==0.11.0
+Pillow==10.1.0
+pdfminer.six==20221105
+charset-normalizer==3.3.2
+cryptography==41.0.7
+Passo 2: Verificar estrutura de arquivos Python em /api
+Seus arquivos Python devem estar em /api com a estrutura correta:
+
+projeto/
+├── api/
+│   ├── index.ts                    # Funções Node.js (existente)
+│   ├── _routes.ts                  # Funções Node.js (existente)
+│   ├── _jwt-auth.ts                # Funções Node.js (existente)
+│   ├── pdf-plumber-service.py      # ← Função Python
+│   └── ocr-service.py              # ← Função Python (se usar)
+├── requirements.txt                # ← Dependências Python
+├── package.json
+└── vercel.json
+Passo 3: Adaptar o código Python para Vercel
+A Vercel espera um formato específico para funções Python. Veja como adaptar:
+
+api/pdf-plumber-service.py:
+
+from http.server import BaseHTTPRequestHandler
+import json
+import pdfplumber
+import base64
+from io import BytesIO
+import traceback
+
+class handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        try:
+            # Ler dados do POST
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            
+            # Parse JSON
+            data = json.loads(post_data.decode('utf-8'))
+            
+            # Verificar se tem PDF em base64
+            if 'pdf' not in data:
+                self.send_error_response(400, 'PDF não fornecido')
+                return
+            
+            # Decodificar PDF de base64
+            pdf_base64 = data['pdf']
+            pdf_bytes = base64.b64decode(pdf_base64)
+            
+            # Processar PDF com pdfplumber
+            result = self.process_pdf(pdf_bytes)
+            
+            # Enviar resposta de sucesso
+            self.send_json_response(200, result)
+            
+        except Exception as e:
+            error_msg = str(e)
+            stack_trace = traceback.format_exc()
+            print(f"Error processing PDF: {error_msg}")
+            print(f"Stack trace: {stack_trace}")
+            self.send_error_response(500, f'Erro ao processar PDF: {error_msg}')
+    
+    def process_pdf(self, pdf_bytes):
+        """Processar PDF e extrair dados das apostas"""
+        bets = []
+        
+        with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
+            for page_num, page in enumerate(pdf.pages, 1):
+                # Extrair texto
+                text = page.extract_text()
+                
+                # Extrair tabelas
+                tables = page.extract_tables()
+                
+                # Aqui você coloca sua lógica de extração
+                # Exemplo básico:
+                if text:
+                    lines = text.split('\n')
+                    for line in lines:
+                        # Sua lógica de parsing aqui
+                        # Exemplo: buscar padrões de apostas
+                        if 'aposta' in line.lower() or 'bet' in line.lower():
+                            bets.append({
+                                'page': page_num,
+                                'text': line.strip()
+                            })
+                
+                # Processar tabelas se houver
+                if tables:
+                    for table_idx, table in enumerate(tables):
+                        for row in table:
+                            if row and any(row):  # Se a linha não está vazia
+                                bets.append({
+                                    'page': page_num,
+                                    'table': table_idx,
+                                    'data': row
+                                })
+        
+        return {
+            'success': True,
+            'total_bets': len(bets),
+            'bets': bets,
+            'pages_processed': len(pdf.pages)
+        }
+    
+    def send_json_response(self, status_code, data):
+        """Enviar resposta JSON"""
+        self.send_response(status_code)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        
+        response = json.dumps(data, ensure_ascii=False)
+        self.wfile.write(response.encode('utf-8'))
+    
+    def send_error_response(self, status_code, message):
+        """Enviar resposta de erro"""
+        self.send_json_response(status_code, {
+            'success': False,
+            'error': message
+        })
+    
+    def do_OPTIONS(self):
+        """Handle CORS preflight"""
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        self.end_headers()
+Passo 4: Atualizar a rota Node.js para chamar a função Python
+No seu arquivo de rotas TypeScript, adicione:
+
+api/_routes.ts (ou onde estiver sua rota de upload):
+
+import { Request, Response } from 'express';
+
+export function setupPdfRoutes(app: Express) {
+  
+  // Rota para processar PDF único
+  app.post('/api/process-pdf', authenticateToken, async (req: Request, res: Response) => {
+    try {
+      const { pdf } = req.body; // PDF em base64
+      
+      if (!pdf) {
+        return res.status(400).json({ error: 'PDF não fornecido' });
+      }
+
+      // Chamar a função Python
+      const pythonServiceUrl = `${req.protocol}://${req.get('host')}/api/pdf-plumber-service`;
+      
+      const response = await fetch(pythonServiceUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ pdf })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        return res.status(response.status).json(error);
+      }
+
+      const result = await response.json();
+      
+      // Salvar as apostas no banco de dados
+      const userId = (req as any).user.userId;
+      const savedBets = await saveBetsToDatabase(userId, result.bets);
+
+      res.json({
+        success: true,
+        message: `${result.total_bets} apostas processadas`,
+        bets: savedBets
+      });
+
+    } catch (error) {
+      console.error('Erro ao processar PDF:', error);
+      res.status(500).json({ 
+        success: false,
+        error: 'Erro ao processar PDF' 
+      });
+    }
+  });
+
+  // Rota para processar múltiplos PDFs (lote)
+  app.post('/api/process-pdf-batch', authenticateToken, async (req: Request, res: Response) => {
+    try {
+      const { pdfs } = req.body; // Array de PDFs em base64
+
+      if (!pdfs || !Array.isArray(pdfs)) {
+        return res.status(400).json({ error: 'Array de PDFs não fornecido' });
+      }
+
+      const results = [];
+      const pythonServiceUrl = `${req.protocol}://${req.get('host')}/api/pdf-plumber-service`;
+
+      for (const pdf of pdfs) {
+        const response = await fetch(pythonServiceUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pdf })
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          results.push(result);
+        }
+      }
+
+      res.json({
+        success: true,
+        processed: results.length,
+        results
+      });
+
+    } catch (error) {
+      console.error('Erro ao processar lote de PDFs:', error);
+      res.status(500).json({ error: 'Erro ao processar lote de PDFs' });
+    }
+  });
+}
+
+async function saveBetsToDatabase(userId: number, bets: any[]) {
+  // Implementar lógica de salvar no banco
+  const db = await getDb();
+  const savedBets = [];
+  
+  for (const bet of bets) {
+    const result = await db.run(
+      'INSERT INTO bets (user_id, description, amount, status) VALUES (?, ?, ?, ?)',
+      [userId, bet.text || JSON.stringify(bet.data), 0, 'pending']
+    );
+    savedBets.push({ id: result.lastID, ...bet });
+  }
+  
+  return savedBets;
+}
+Passo 5: Atualizar vercel.json
+Adicione configuração para as funções Python:
+
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    }
+  ],
+  "functions": {
+    "api/index.ts": {
+      "maxDuration": 30
+    },
+    "api/pdf-plumber-service.py": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  }
+}
+Passo 6: Testar localmente com Vercel CLI
+Antes de fazer deploy, teste localmente:
+
+# Instalar Vercel CLI (se não tiver)
+npm i -g vercel
+
+# Rodar localmente
+vercel dev
+Isso vai simular o ambiente da Vercel localmente, incluindo as funções Python.
+
+Passo 7: Deploy
+git add .
+git commit -m "Add Python PDF processing functions"
+git push origin main
+🔍 Verificar se funcionou
+Depois do deploy, teste:
+
+# Testar função Python diretamente
+curl -X POST https://seu-dominio.vercel.app/api/pdf-plumber-service \
+  -H "Content-Type: application/json" \
+  -d '{"pdf":"JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PC..."}'
+
+# Testar através da rota Node.js
+curl -X POST https://seu-dominio.vercel.app/api/process-pdf \
+  -H "Authorization: Bearer SEU_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"pdf":"JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PC..."}'
+⚠️ PONTOS IMPORTANTES
+Cold Start: Funções Python têm cold start de ~3-5 segundos
+Timeout: Configure maxDuration: 60 para PDFs grandes
+Memory: Use memory: 1024 ou mais para PDFs complexos
+Tamanho: Limite de payload é 4.5MB (use base64 comprimido)
+📋 CHECKLIST
+ requirements.txt criado na raiz
+ api/pdf-plumber-service.py com formato correto
+ Rota Node.js atualizada para chamar Python
+ vercel.json configurado com maxDuration
+ Testado localmente com vercel dev
+ Deploy feito
+Me avise quando você:
+
+Criar os arquivos e testar localmente
+Fazer o deploy para verificarmos os logs juntos
+Encontrar algum erro durante o processo
+Vou te ajudar em cada etapa! 🚀
+
+Avatar for bielsr01-4654
+fiz algumas alteracoes veja os logs agora
+continua sem funcionar nova aposta e lote de apostas
+
+Vou analisar os logs mais recentes para identificar o problema: Vejo que o deployment mais recente está READY. Deixe-me ver os logs de build do deployment atual e também verificar se há algum erro no deployment anterior que falhou: Excelente! Vejo que o pdfplumber foi instalado com sucesso nos logs de build! Agora preciso ver os logs de runtime para entender o erro específico quando você tenta fazer upload. Vou buscar informações sobre como debugar problemas com upload de arquivos: Perfeito! Agora entendi melhor. O build Python está funcionando perfeitamente! O problema agora é runtime - quando você tenta fazer upload de PDF.
+
+Com base nos logs e na documentação, identifiquei alguns problemas potenciais:
+
+🔴 PROBLEMAS IDENTIFICADOS
+1. Limite de 4.5MB da Vercel
+A Vercel tem um limite de 4.5MB para o body de requisições. Se o PDF for maior, vai falhar.
+
+2. Formato do upload
+O frontend precisa enviar o PDF no formato correto (base64).
+
+3. Rota não está respondendo
+Pode ser que a rota Python não esteja sendo chamada corretamente ou o formato da resposta esteja incorreto.
+
+✅ SOLUÇÃO COMPLETA
+Vou te dar o código completo para fazer funcionar:
+
+1. Atualizar api/pdf-plumber-service.py
+from http.server import BaseHTTPRequestHandler
+import json
+import pdfplumber
+import base64
+from io import BytesIO
+import traceback
+import sys
+
+class handler(BaseHTTPRequestHandler):
+    
+    def do_OPTIONS(self):
+        """Handle CORS preflight"""
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        self.end_headers()
+    
+    def do_POST(self):
+        try:
+            print("[PDF Service] Starting request processing", file=sys.stderr)
+            
+            # Ler dados do POST
+            content_length = int(self.headers.get('Content-Length', 0))
+            
+            if content_length == 0:
+                self.send_error_response(400, 'No data provided')
+                return
+            
+            print(f"[PDF Service] Content length: {content_length}", file=sys.stderr)
+            
+            post_data = self.rfile.read(content_length)
+            
+            # Parse JSON
+            try:
+                data = json.loads(post_data.decode('utf-8'))
+            except json.JSONDecodeError as e:
+                self.send_error_response(400, f'Invalid JSON: {str(e)}')
+                return
+            
+            # Verificar se tem PDF em base64
+            if 'pdf' not in data:
+                self.send_error_response(400, 'PDF field not found in request')
+                return
+            
+            print("[PDF Service] PDF data received", file=sys.stderr)
+            
+            # Decodificar PDF de base64
+            pdf_base64 = data['pdf']
+            
+            # Remover prefixo data:application/pdf;base64, se existir
+            if ',' in pdf_base64:
+                pdf_base64 = pdf_base64.split(',')[1]
+            
+            try:
+                pdf_bytes = base64.b64decode(pdf_base64)
+            except Exception as e:
+                self.send_error_response(400, f'Invalid base64 encoding: {str(e)}')
+                return
+            
+            print(f"[PDF Service] PDF decoded, size: {len(pdf_bytes)} bytes", file=sys.stderr)
+            
+            # Processar PDF com pdfplumber
+            result = self.process_pdf(pdf_bytes)
+            
+            print(f"[PDF Service] Processing complete, found {result['total_bets']} bets", file=sys.stderr)
+            
+            # Enviar resposta de sucesso
+            self.send_json_response(200, result)
+            
+        except Exception as e:
+            error_msg = str(e)
+            stack_trace = traceback.format_exc()
+            print(f"[PDF Service] Error: {error_msg}", file=sys.stderr)
+            print(f"[PDF Service] Stack trace: {stack_trace}", file=sys.stderr)
+            self.send_error_response(500, f'Error processing PDF: {error_msg}')
+    
+    def process_pdf(self, pdf_bytes):
+        """Processar PDF e extrair dados das apostas"""
+        bets = []
+        all_text = ""
+        
+        print("[PDF Service] Opening PDF with pdfplumber", file=sys.stderr)
+        
+        with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
+            print(f"[PDF Service] PDF opened, pages: {len(pdf.pages)}", file=sys.stderr)
+            
+            for page_num, page in enumerate(pdf.pages, 1):
+                print(f"[PDF Service] Processing page {page_num}", file=sys.stderr)
+                
+                # Extrair texto
+                text = page.extract_text()
+                if text:
+                    all_text += text + "\n"
+                
+                # Extrair tabelas
+                tables = page.extract_tables()
+                
+                # Processar tabelas
+                if tables:
+                    print(f"[PDF Service] Found {len(tables)} tables on page {page_num}", file=sys.stderr)
+                    
+                    for table_idx, table in enumerate(tables):
+                        for row_idx, row in enumerate(table):
+                            if row and any(row):  # Se a linha não está vazia
+                                bets.append({
+                                    'page': page_num,
+                                    'table': table_idx,
+                                    'row': row_idx,
+                                    'data': [str(cell) if cell else '' for cell in row],
+                                    'raw_text': ' | '.join([str(cell) if cell else '' for cell in row])
+                                })
+        
+        print(f"[PDF Service] Extraction complete, {len(bets)} items found", file=sys.stderr)
+        
+        return {
+            'success': True,
+            'total_bets': len(bets),
+            'bets': bets,
+            'pages_processed': len(pdf.pages),
+            'full_text': all_text[:1000]  # Primeiros 1000 caracteres
+        }
+    
+    def send_json_response(self, status_code, data):
+        """Enviar resposta JSON"""
+        self.send_response(status_code)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        
+        response = json.dumps(data, ensure_ascii=False)
+        self.wfile.write(response.encode('utf-8'))
+    
+    def send_error_response(self, status_code, message):
+        """Enviar resposta de erro"""
+        self.send_json_response(status_code, {
+            'success': False,
+            'error': message
+        })
+2. Atualizar rota Node.js em api/_routes.ts
+import { Express, Request, Response } from 'express';
+import { authenticateToken } from './_jwt-auth.js';
+
+export function setupRoutes(app: Express) {
+  
+  // Health check
+  app.get('/api', (req: Request, res: Response) => {
+    res.json({ 
+      status: 'API funcionando!',
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  // Processar PDF único (Nova Aposta)
+  app.post('/api/process-pdf', authenticateToken, async (req: Request, res: Response) => {
+    try {
+      console.log('[Process PDF] Request received');
+      
+      const { pdf } = req.body;
+      
+      if (!pdf) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'PDF não fornecido' 
+        });
+      }
+
+      console.log('[Process PDF] Calling Python service');
+
+      // Chamar a função Python
+      const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+      const host = req.headers['x-forwarded-host'] || req.get('host');
+      const pythonServiceUrl = `${protocol}://${host}/api/pdf-plumber-service`;
+
+      console.log('[Process PDF] Python URL:', pythonServiceUrl);
+
+      const response = await fetch(pythonServiceUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ pdf })
+      });
+
+      console.log('[Process PDF] Python response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[Process PDF] Python error:', errorText);
+        return res.status(response.status).json({
+          success: false,
+          error: `Erro ao processar PDF: ${errorText}`
+        });
+      }
+
+      const result = await response.json();
+      
+      console.log('[Process PDF] Result:', JSON.stringify(result).substring(0, 200));
+
+      // TODO: Salvar as apostas no banco de dados
+      // const userId = (req as any).user.userId;
+      // await saveBetsToDatabase(userId, result.bets);
+
+      res.json({
+        success: true,
+        message: `${result.total_bets} apostas encontradas`,
+        data: result
+      });
+
+    } catch (error: any) {
+      console.error('[Process PDF] Error:', error);
+      res.status(500).json({ 
+        success: false,
+        error: error.message || 'Erro ao processar PDF'
+      });
+    }
+  });
+
+  // Processar lote de PDFs
+  app.post('/api/process-pdf-batch', authenticateToken, async (req: Request, res: Response) => {
+    try {
+      console.log('[Process Batch] Request received');
+      
+      const { pdfs } = req.body;
+
+      if (!pdfs || !Array.isArray(pdfs) || pdfs.length === 0) {
+        return res.status(400).json({ 
+          success: false,
+          error: 'Array de PDFs não fornecido ou vazio' 
+        });
+      }
+
+      console.log(`[Process Batch] Processing ${pdfs.length} PDFs`);
+
+      const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+      const host = req.headers['x-forwarded-host'] || req.get('host');
+      const pythonServiceUrl = `${protocol}://${host}/api/pdf-plumber-service`;
+
+      const results = [];
+      let totalBets = 0;
+
+      for (let i = 0; i < pdfs.length; i++) {
+        console.log(`[Process Batch] Processing PDF ${i + 1}/${pdfs.length}`);
+        
+        try {
+          const response = await fetch(pythonServiceUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pdf: pdfs[i] })
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            results.push({
+              index: i,
+              success: true,
+              ...result
+            });
+            totalBets += result.total_bets || 0;
+          } else {
+            const errorText = await response.text();
+            results.push({
+              index: i,
+              success: false,
+              error: errorText
+            });
+          }
+        } catch (error: any) {
+          console.error(`[Process Batch] Error on PDF ${i}:`, error);
+          results.push({
+            index: i,
+            success: false,
+            error: error.message
+          });
+        }
+      }
+
+      console.log(`[Process Batch] Complete: ${totalBets} total bets from ${results.length} PDFs`);
+
+      res.json({
+        success: true,
+        processed: results.length,
+        total_bets: totalBets,
+        results
+      });
+
+    } catch (error: any) {
+      console.error('[Process Batch] Error:', error);
+      res.status(500).json({ 
+        success: false,
+        error: error.message || 'Erro ao processar lote de PDFs' 
+      });
+    }
+  });
+}
+3. Atualizar vercel.json
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    }
+  ],
+  "functions": {
+    "api/index.ts": {
+      "maxDuration": 30
+    },
+    "api/pdf-plumber-service.py": {
+      "maxDuration": 60,
+      "memory": 3008
+    }
+  }
+}
+Mudanças importantes:
+
+maxDuration: 60
+Para PDFs grandes
+memory: 3008
+Mais memória para processar PDFs (máximo no Hobby plan)
+4. Frontend - Como enviar o PDF
+No seu frontend React/TypeScript, o código deve estar assim:
+
+// Função para converter File para base64
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      const base64 = reader.result as string;
+      // Remover o prefixo data:application/pdf;base64,
+      const base64Data = base64.split(',')[1];
+      resolve(base64Data);
+    };
+    reader.onerror = error => reject(error);
+  });
+};
+
+// Upload único
+const handleSinglePdfUpload = async (file: File) => {
+  try {
+    const pdfBase64 = await fileToBase64(file);
+    
+    const response = await fetch('/api/process-pdf', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ pdf: pdfBase64 })
+    });
+
+    const result = await response.json();
+    
+    if (result.success) {
+      console.log('PDF processado:', result);
+      // Atualizar UI
+    } else {
+      console.error('Erro:', result.error);
+    }
+  } catch (error) {
+    console.error('Erro no upload:', error);
+  }
+};
+
+// Upload em lote
+const handleBatchPdfUpload = async (files: File[]) => {
+  try {
+    const pdfsBase64 = await Promise.all(
+      files.map(file => fileToBase64(file))
+    );
+    
+    const response = await fetch('/api/process-pdf-batch', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ pdfs: pdfsBase64 })
+    });
+
+    const result = await response.json();
+    
+    if (result.success) {
+      console.log('Lote processado:', result);
+      // Atualizar UI
+    } else {
+      console.error('Erro:', result.error);
+    }
+  } catch (error) {
+    console.error('Erro no upload em lote:', error);
+  }
+};
+5. Verificar tamanho do arquivo
+Adicione validação no frontend:
+
+const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4MB (deixar margem)
+
+const validateFile = (file: File): boolean => {
+  if (file.size > MAX_FILE_SIZE) {
+    alert(`Arquivo muito grande. Máximo: 4MB. Tamanho do arquivo: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+    return false;
+  }
+  
+  if (file.type !== 'application/pdf') {
+    alert('Apenas arquivos PDF são permitidos');
+    return false;
+  }
+  
+  return true;
+};
+6. Deploy e teste
+git add .
+git commit -m "Add Python PDF processing with proper error handling"
+git push origin main
+🧪 COMO TESTAR
+Depois do deploy, você pode testar diretamente:
+
+Teste 1: Verificar se a função Python está disponível
+curl -X POST https://vercelv2-rust.vercel.app/api/pdf-plumber-service \
+  -H "Content-Type: application/json" \
+  -d '{"pdf":"JVBERi0xLjQKJeLjz9MK"}'
+Teste 2: Ver os logs em tempo real
+Abra em outra aba: https://vercel.com/bielsr01-4654s-projects/vercelv2/logs
+
+Depois tente fazer upload de um PDF pequeno pelo app e acompanhe os logs.
+
+📋 CHECKLIST
+ requirements.txt na raiz com pdfplumber
+ api/pdf-plumber-service.py atualizado com logs detalhados
+ api/_routes.ts com rotas de upload
+ vercel.json com maxDuration: 60 para Python
+ Frontend enviando PDF em base64 correto
+ Validação de tamanho no frontend (máx 4MB)
+Faça essas mudanças, dê commit e me avise. Vamos acompanhar os logs juntos para ver exatamente onde está falhando! 🚀
