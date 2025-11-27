@@ -14,17 +14,8 @@ import type {
   InsertUser
 } from "@shared/schema";
 import { eq, desc, inArray, asc } from "drizzle-orm";
-import session from "express-session";
-import connectPg from "connect-pg-simple";
-import { sessionPool } from "./db";
-
-const PostgresSessionStore = connectPg(session);
 
 export interface IStorage {
-  // Session store
-  sessionStore: session.Store;
-
-  // Users
   createUser(data: InsertUser): Promise<User>;
   getUser(id: string): Promise<User | null>;
   getUserByEmail(email: string): Promise<User | null>;
@@ -32,44 +23,29 @@ export interface IStorage {
   updateUser(id: string, data: Partial<InsertUser>): Promise<User>;
   deleteUser(id: string): Promise<void>;
 
-  // Account Holders
   createAccountHolder(data: InsertAccountHolder): Promise<AccountHolder>;
   getAccountHolders(userId?: string): Promise<AccountHolder[]>;
   updateAccountHolder(id: string, data: Partial<InsertAccountHolder>): Promise<AccountHolder>;
   deleteAccountHolder(id: string): Promise<void>;
 
-  // Betting Houses  
   createBettingHouse(data: InsertBettingHouse): Promise<BettingHouse>;
   getBettingHouses(userId?: string): Promise<any[]>;
   getBettingHousesByHolder(accountHolderId: string): Promise<BettingHouse[]>;
   updateBettingHouse(id: string, data: Partial<InsertBettingHouse>): Promise<BettingHouse>;
   deleteBettingHouse(id: string): Promise<void>;
 
-  // Surebet Sets
   createSurebetSet(data: InsertSurebetSet): Promise<SurebetSet>;
   getSurebetSets(userId?: string): Promise<SurebetSetWithBets[]>;
   getSurebetSetById(id: string): Promise<SurebetSetWithBets | null>;
   updateSurebetSet(id: string, data: Partial<InsertSurebetSet>): Promise<SurebetSet>;
   deleteSurebetSet(id: string): Promise<void>;
 
-  // Individual Bets
   createBet(data: InsertBet): Promise<Bet>;
   updateBet(id: string, data: Partial<InsertBet>): Promise<Bet>;
   deleteBet(id: string): Promise<void>;
 }
 
 class DatabaseStorage implements IStorage {
-  sessionStore: session.Store;
-
-  constructor() {
-    this.sessionStore = new PostgresSessionStore({ 
-      pool: sessionPool, 
-      createTableIfMissing: true,
-      errorLog: console.error 
-    });
-  }
-
-  // Users
   async createUser(data: InsertUser): Promise<User> {
     const [user] = await db.insert(users).values(data).returning();
     return user;
@@ -104,7 +80,6 @@ class DatabaseStorage implements IStorage {
     await db.delete(users).where(eq(users.id, id));
   }
 
-  // Account Holders
   async createAccountHolder(data: InsertAccountHolder): Promise<AccountHolder> {
     const [accountHolder] = await db.insert(accountHolders).values(data).returning();
     return accountHolder;
@@ -132,7 +107,6 @@ class DatabaseStorage implements IStorage {
     await db.delete(accountHolders).where(eq(accountHolders.id, id));
   }
 
-  // Betting Houses
   async createBettingHouse(data: InsertBettingHouse): Promise<BettingHouse> {
     const [bettingHouse] = await db.insert(bettingHouses).values(data).returning();
     return bettingHouse;
@@ -179,14 +153,12 @@ class DatabaseStorage implements IStorage {
     await db.delete(bettingHouses).where(eq(bettingHouses.id, id));
   }
 
-  // Surebet Sets
   async createSurebetSet(data: InsertSurebetSet): Promise<SurebetSet> {
     const [surebetSet] = await db.insert(surebetSets).values(data).returning();
     return surebetSet;
   }
 
   async getSurebetSets(userId?: string): Promise<SurebetSetWithBets[]> {
-    // Query 1: Get all surebet sets
     let query = db.select().from(surebetSets);
     
     if (userId) {
@@ -199,8 +171,6 @@ class DatabaseStorage implements IStorage {
       return [];
     }
     
-    // Query 2: Get ALL bets for ALL sets in a single batched query
-    // ORDER BY garante ordem determinística (createdAt + id como critério de desempate)
     const setIds = sets.map(set => set.id);
     const allBets = await db
       .select()
@@ -210,12 +180,11 @@ class DatabaseStorage implements IStorage {
       .where(inArray(bets.surebetSetId, setIds))
       .orderBy(asc(bets.createdAt), asc(bets.id));
     
-    // Group bets by set ID in memory
     const betsBySetId = new Map<string, any[]>();
     
     for (const row of allBets) {
       const setId = row.bets.surebetSetId;
-      if (!setId) continue; // Skip if no set ID (shouldn't happen)
+      if (!setId) continue;
       
       if (!betsBySetId.has(setId)) {
         betsBySetId.set(setId, []);
@@ -230,13 +199,10 @@ class DatabaseStorage implements IStorage {
       });
     }
     
-    // Assemble final result
-    // Converte Date para string ISO mantendo os valores UTC (que são os valores do banco sem timezone)
     const formatDateToISO = (date: Date | string | null): string | null => {
       if (!date) return null;
       if (typeof date === 'string') return date;
       
-      // Extrai componentes UTC do Date (que representam os valores do banco)
       const year = date.getUTCFullYear();
       const month = String(date.getUTCMonth() + 1).padStart(2, '0');
       const day = String(date.getUTCDate()).padStart(2, '0');
@@ -248,7 +214,6 @@ class DatabaseStorage implements IStorage {
     };
     
     const result: SurebetSetWithBets[] = sets.map(set => {
-      // SQL já ordena - não reordenar aqui
       const setBets = betsBySetId.get(set.id) || [];
       
       return {
@@ -281,7 +246,6 @@ class DatabaseStorage implements IStorage {
       .where(eq(bets.surebetSetId, set.id))
       .orderBy(asc(bets.createdAt), asc(bets.id));
 
-    // Helper para converter Date para ISO string sem conversão de timezone
     const formatDateToISO = (date: Date | string | null): string | null => {
       if (!date) return null;
       if (typeof date === 'string') return date;
@@ -296,7 +260,6 @@ class DatabaseStorage implements IStorage {
       return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.000Z`;
     };
 
-    // SQL já ordena - não reordenar aqui
     const formattedBets = setBets.map(row => ({
         ...row.bets,
         createdAt: formatDateToISO(row.bets.createdAt),
@@ -327,13 +290,10 @@ class DatabaseStorage implements IStorage {
   }
 
   async deleteSurebetSet(id: string): Promise<void> {
-    // Delete associated bets first
     await db.delete(bets).where(eq(bets.surebetSetId, id));
-    // Then delete the set
     await db.delete(surebetSets).where(eq(surebetSets.id, id));
   }
 
-  // Individual Bets
   async createBet(data: InsertBet): Promise<Bet> {
     const [bet] = await db.insert(bets).values(data).returning();
     return bet;
